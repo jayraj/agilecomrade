@@ -47,7 +47,7 @@ const draftToPlainText = (html: string): string =>
 
 export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDetailPanelProps) {
   const { syncIntervalSeconds, refreshKey } = useSync()
-  const { snapshot, loading, error, noProfile } = useSnapshot(syncIntervalSeconds, refreshKey)
+  const { snapshot, loading, error, noProfile, offline } = useSnapshot(syncIntervalSeconds, refreshKey)
   const isFuture = kind === 'future'
 
   const [mitigations, setMitigations] = useState<Mitigation[]>(snapshot?.mitigations ?? [])
@@ -278,7 +278,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
                   <RiskCardItem
                     key={key}
                     blocker={blocker}
-                    showDraft={!isFuture && !!blocker.issue_key}
+                    showDraft={!isFuture && !!blocker.issue_key && !offline}
                     showCategory={isFuture}
                     drafting={draftingKey === blocker.issue_key}
                     onDraft={() => draftMessage(blocker)}
@@ -300,7 +300,8 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
             if (isFuture) analyzeRisks()
             else generateMitigations()
           }}
-          disabled={generating || analyzing}
+          disabled={generating || analyzing || offline}
+          title={offline ? 'You are offline — AI features need a connection' : undefined}
         >
           <Sparkles size={15} />
           {isFuture ? (analyzing ? 'Analyzing...' : 'Scan with AI') : generating ? 'Generating...' : 'Mitigation Plan with AI'}

@@ -4,6 +4,9 @@ __pycache__/
 *.pyc
 backend/data/burndown_history.json
 backend/backend.log
+backend.log
+dev.log
+spec-driven-development-plan.md
 
 # Env / secrets
 .env
@@ -13,6 +16,7 @@ backend/backend.log
 # Node
 frontend/node_modules/
 frontend/dist/
+frontend/dev-dist/
 frontend/dev.log
 
 # OS / editor

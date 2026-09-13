@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { apiSnapshot, type Snapshot } from '../api/client'
 import { profileApi } from '../api/config'
+import { loadOfflineSnapshot, saveOfflineSnapshot } from '../utils/offlineCache'
 import { setJiraTimezone } from '../utils/format'
 
 export interface SnapshotState {
@@ -8,6 +9,7 @@ export interface SnapshotState {
   loading: boolean
   error: string | null
   noProfile: boolean
+  offline: boolean
 }
 
 interface StoreState extends SnapshotState {
@@ -19,6 +21,7 @@ let current: StoreState = {
   loading: false,
   error: null,
   noProfile: false,
+  offline: false,
   lastSync: null,
 }
 
@@ -47,6 +50,15 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeSlug: string | null = null
 let inflight: Promise<void> | null = null
 
+const applySnapshot = (data: Snapshot): void => {
+  setStore({ snapshot: data, error: null, loading: false, offline: false })
+  setJiraTimezone(data.jira_timezone)
+  if (data.last_sync !== current.lastSync) {
+    current.lastSync = data.last_sync
+    lastSyncListeners.forEach((listener) => listener(data.last_sync))
+  }
+}
+
 const doFetch = (): Promise<void> => {
   if (!activeSlug) return Promise.resolve()
   if (inflight) return inflight
@@ -54,17 +66,27 @@ const doFetch = (): Promise<void> => {
   const promise = (async () => {
     try {
       const data = await apiSnapshot()
-      setStore({ snapshot: data, error: null, loading: false })
-      setJiraTimezone(data.jira_timezone)
-      if (data.last_sync !== current.lastSync) {
-        current.lastSync = data.last_sync
-        lastSyncListeners.forEach((listener) => listener(data.last_sync))
-      }
+      applySnapshot(data)
+      void saveOfflineSnapshot(activeSlug, data)
     } catch (err) {
-      setStore({
-        error: err instanceof Error ? err.message : 'Failed to load snapshot',
-        loading: false,
-      })
+      const cached = await loadOfflineSnapshot(activeSlug)
+      if (cached) {
+        setStore({
+          snapshot: cached,
+          error: null,
+          loading: false,
+          offline: true,
+        })
+        if (cached.last_sync && cached.last_sync !== current.lastSync) {
+          current.lastSync = cached.last_sync
+          lastSyncListeners.forEach((listener) => listener(cached.last_sync))
+        }
+      } else {
+        setStore({
+          error: err instanceof Error ? err.message : 'Failed to load snapshot',
+          loading: false,
+        })
+      }
     } finally {
       inflight = null
     }
@@ -110,12 +132,20 @@ export function useSnapshot(syncIntervalSeconds: number, refreshKey = 0): Snapsh
 
   useEffect(() => {
     if (!slug) {
-      setStore({ noProfile: true, snapshot: null, loading: false, error: null })
+      setStore({ noProfile: true, snapshot: null, loading: false, error: null, offline: false })
       stopPolling()
       return
     }
     setStore({ noProfile: false })
     startPolling(slug, syncIntervalSeconds)
+
+    const onOnline = (): void => {
+      void doFetch()
+    }
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+    }
   }, [slug, syncIntervalSeconds, refreshKey])
 
   return useSyncExternalStore(subscribe, getSnapshot)

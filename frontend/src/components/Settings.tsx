@@ -11,6 +11,7 @@ import {
   apiUpdateProfile,
 } from '../api/client'
 import { profileApi } from '../api/config'
+import { clearOfflineSnapshot } from '../utils/offlineCache'
 
 interface SettingsProps {
   onProfilesChanged: () => void
@@ -212,6 +213,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
       profileApi.setActiveSlug(slug)
       await apiDeleteProfile(slug)
       profileApi.remove(slug)
+      void clearOfflineSnapshot(slug)
       refreshProfiles()
       setMessage({ kind: 'ok', text: `Profile '${slug}' deleted.` })
       setCurrentSlug(null)

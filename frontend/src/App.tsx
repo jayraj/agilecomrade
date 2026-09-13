@@ -8,7 +8,7 @@ import SprintDetailPanel from './components/SprintDetailPanel'
 import Settings from './components/Settings'
 import { apiSyncNow, FEEDBACK_URL } from './api/client'
 import { profileApi } from './api/config'
-import { subscribeLastSync } from './hooks/useSnapshot'
+import { subscribeLastSync, useSnapshot } from './hooks/useSnapshot'
 import { SyncContext } from './context/SyncContext'
 import { formatLastSync } from './utils/format'
 
@@ -25,6 +25,7 @@ export default function App() {
   )
   const location = useLocation()
   const detailOpen = detail !== null && location.pathname === '/'
+  const { offline } = useSnapshot(syncIntervalSeconds, refreshKey)
 
   const dismissDisclaimer = () => {
     localStorage.setItem('srr_disclaimer_dismissed', '1')
@@ -66,6 +67,7 @@ export default function App() {
       <TopStrip
         lastSync={lastSync}
         syncing={syncing}
+        offline={offline}
         onSyncNow={syncNow}
         profiles={profiles}
         activeProfile={activeProfile}
