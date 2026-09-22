@@ -69,6 +69,35 @@ export interface RadarCard {
   details: RiskDetail[]
 }
 
+export interface RiskSignalFact {
+  label: string
+  value: string
+}
+
+export interface RiskSignal {
+  label: string
+  facts: RiskSignalFact[]
+}
+
+export type RiskDecisionStatus =
+  | 'pending'
+  | 'accepted'
+  | 'monitoring'
+  | 'mitigating'
+  | 'escalated'
+  | 'dismissed'
+
+export interface RiskDecision {
+  status: RiskDecisionStatus
+  note?: string
+  owner?: string
+  decided_at?: string
+  /** Auto-set when a decided risk is no longer detected (ledger bookkeeping). */
+  outcome?: string
+  resolved_at?: string
+  last_seen?: string
+}
+
 export interface Blocker {
   type: string
   sprint_key?: string
@@ -93,6 +122,12 @@ export interface Blocker {
   qa_stories_count?: number
   stalled_issues?: { key: string; summary?: string; assignee?: string; hours_since_update: number }[]
   overdue_issues?: { key: string; summary?: string; days_overdue: number }[]
+  /** Transparency fields (signal → cause → action → human decision). */
+  risk_id?: string
+  signal?: RiskSignal
+  suspected_cause?: string
+  suggested_action?: string
+  decision?: RiskDecision
 }
 
 export interface Mitigation {
@@ -223,6 +258,8 @@ export interface Snapshot {
     baselines: Record<string, { total_sp: number; captured_at: string; manual?: boolean }>
     history: Record<string, number[]>
   }
+  /** Human risk decisions persisted across syncs, keyed by stable risk_id. */
+  risk_decisions?: Record<string, RiskDecision>
   /** Jira user's profile timezone (e.g. "Asia/Kolkata") — the source of truth
    * for all calendar-day math so dates match the Jira UI. */
   jira_timezone?: string
@@ -344,3 +381,9 @@ export const apiGenerateFollowup = async (
       blocker: blocker ?? null,
     })
   ).data
+
+export const apiSetRiskDecision = async (
+  riskId: string,
+  body: { status: RiskDecisionStatus; note?: string; owner?: string },
+): Promise<{ status: string; risk_id: string; decision: RiskDecision }> =>
+  (await api.post('/api/risk-decision', { risk_id: riskId, ...body })).data

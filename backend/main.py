@@ -18,6 +18,7 @@ from jira_fetcher import JiraFetcher, fetch_all
 from mitigation_agent import MitigationAgent
 from risk_components import now_utc, to_utc
 from risk_engine import RiskEngine
+from risk_explainer import DECISION_STATUSES
 from snapshot import build_snapshot
 from supabase_store import DuplicateProfileError, SupabaseStore
 
@@ -225,8 +226,10 @@ def _refresh_snapshot(row: dict, config: UserConfig):
     burndown_history = row.get("burndown_history") or {}
     # Scope-creep state lives inside the persisted snapshot (no dedicated
     # Supabase column): baselines captured at first active sync + SP trail.
+    # Human risk decisions are carried the same way so they survive re-syncs.
     prev_snapshot = row.get("snapshot") or {}
     scope_meta = prev_snapshot.get("scope_meta") or {"baselines": {}, "history": {}}
+    risk_decisions = prev_snapshot.get("risk_decisions") or {}
 
     risk_engine = RiskEngine()
 
@@ -305,6 +308,7 @@ def _refresh_snapshot(row: dict, config: UserConfig):
         last_sync=datetime.utcnow().isoformat(),
         scope_meta=scope_meta,
         jira_timezone=jira_timezone,
+        risk_decisions=risk_decisions,
     )
 
     store.update_profile(row["slug"], {
@@ -353,6 +357,7 @@ def index():
             "/api/profiles",
             "/api/profiles/{slug}",
             "/api/profiles/verify",
+            "/api/risk-decision",
             "/api/test-config",
             "/api/snapshot",
             "/api/sync-now",
@@ -717,6 +722,52 @@ def set_scope_baseline(slug: str, request: Request, body: dict = None):
 # ------------------------------------------------------------------ #
 # AI / next-sprint endpoints (operate on the profile snapshot)
 # ------------------------------------------------------------------ #
+@app.post("/api/risk-decision")
+def set_risk_decision(request: Request, body: dict = None):
+    """Record the scrum master's human decision on a detected risk.
+
+    Body: {"risk_id": str, "status": one of DECISION_STATUSES, "note": str?, "owner": str?}
+    Merged into the snapshot's risk_decisions ledger (keyed by stable risk_id)
+    and persisted so it survives the next sync/re-detection.
+    """
+    row, error = _auth(request)
+    if error:
+        return error
+
+    body = body or {}
+    risk_id = (body.get("risk_id") or "").strip()
+    status = (body.get("status") or "").strip().lower()
+    if not risk_id or status not in DECISION_STATUSES:
+        return JSONResponse(
+            {"status": "error", "error": f"risk_id and a valid status ({', '.join(DECISION_STATUSES)}) are required"},
+            status_code=400,
+        )
+
+    snapshot, _ = _get_or_refresh_snapshot(row, allow_stale=True)
+    if risk_id not in {r.get("risk_id") for r in snapshot.get("risks", [])}:
+        return JSONResponse(
+            {"status": "error", "error": "Risk not found in the current snapshot — it may have resolved or moved"},
+            status_code=404,
+        )
+
+    decisions = dict(snapshot.get("risk_decisions") or {})
+    decisions[risk_id] = {
+        "status": status,
+        "note": (body.get("note") or "").strip(),
+        "owner": (body.get("owner") or "").strip(),
+        "decided_at": datetime.utcnow().isoformat(),
+    }
+
+    updated = {**snapshot, "risk_decisions": decisions}
+    for risk in updated.get("risks", []):
+        if risk.get("risk_id") == risk_id:
+            risk["decision"] = decisions[risk_id]
+    store.update_profile(row["slug"], {"snapshot": updated})
+    logger.info(f"🧑‍⚖️ Risk decision recorded | risk={risk_id} status={status} profile={row['slug']}")
+
+    return {"status": "ok", "risk_id": risk_id, "decision": decisions[risk_id]}
+
+
 @app.post("/api/generate-mitigations")
 def generate_mitigations(request: Request, body: dict = None):
     row, error = _auth(request)

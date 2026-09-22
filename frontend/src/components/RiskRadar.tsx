@@ -35,7 +35,7 @@ export default function RiskRadar({ onSelectDetail }: RiskRadarProps) {
   return (
     <div className="risk-radar">
       <SectionHeader
-        title="Active Sprint(s)"
+        title="Active Sprint(s) Health"
         count={radarData.length}
         status={{ label: `${snapshot?.total_risks ?? 0} risks`, tone: 'amber' }}
       />

@@ -10,6 +10,12 @@ from datetime import datetime, timedelta
 
 from risk_components import is_done, to_utc
 from risk_engine import RiskEngine
+from risk_explainer import (
+    PENDING_STATUS,
+    explain_risk,
+    reconcile_decisions,
+    stable_risk_id,
+)
 
 SPRINT_LEVEL_RISK_TYPES = ["BURNDOWN_BEHIND", "QA_BOTTLENECK", "BUG_RAISED", "SCOPE_CREEP", "SPRINT_ENDED_INCOMPLETE", "SPRINT_NOT_STARTED"]
 
@@ -340,9 +346,22 @@ def _build_delivery_health(sprint_data, next_sprint_data, velocity_data, risks, 
     return projects
 
 
-def build_snapshot(sprint_data, next_sprint_data, velocity_data, risks, burndown_history, mitigations, last_sync, scope_meta=None, jira_timezone=None):
+def build_snapshot(sprint_data, next_sprint_data, velocity_data, risks, burndown_history, mitigations, last_sync, scope_meta=None, jira_timezone=None, risk_decisions=None):
     risk_engine = RiskEngine()
     lookup = _issue_to_sprint_lookup(sprint_data)
+
+    # Transparency enrichment: every risk gets a stable identity plus the
+    # Signal / Suspected cause / Suggested action fields, and is linked to any
+    # human decision the user recorded for it (persisted across syncs under the
+    # snapshot's risk_decisions key, keyed by stable_risk_id).
+    risk_decisions = reconcile_decisions(risks, risk_decisions or {})
+    for risk in risks:
+        if not risk.get("sprint_key"):
+            risk["sprint_key"] = lookup.get(risk.get("issue_key"))
+        risk["risk_id"] = stable_risk_id(risk)
+        explain_risk(risk)
+        decision = risk_decisions.get(risk["risk_id"])
+        risk["decision"] = decision or {"status": PENDING_STATUS}
 
     blockers = list(risks)
     for blocker in blockers:
@@ -366,6 +385,7 @@ def build_snapshot(sprint_data, next_sprint_data, velocity_data, risks, burndown
         "mitigations": mitigations,
         "burndown_history": burndown_history,
         "scope_meta": scope_meta or {"baselines": {}, "history": {}},
+        "risk_decisions": risk_decisions,
         "last_sync": last_sync,
         "jira_timezone": jira_timezone,
     }

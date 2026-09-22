@@ -16,11 +16,14 @@ import {
   apiGenerateMitigations,
   apiNextSprintIssues,
   apiNextSprintRisks,
+  apiSetRiskDecision,
   SHOW_AI_DEBUG,
   type Blocker,
   type Mitigation,
   type NextSprintIssue,
   type NextSprintProject,
+  type RiskDecision,
+  type RiskDecisionStatus,
 } from '../api/client'
 import {
   describeAiFallback,
@@ -61,6 +64,9 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
   const [futureIssues, setFutureIssues] = useState<NextSprintIssue[]>([])
   const [futureRisks, setFutureRisks] = useState<Blocker[] | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+
+  const [localDecisions, setLocalDecisions] = useState<Record<string, RiskDecision>>({})
+  const [decidingId, setDecidingId] = useState<string | null>(null)
 
   const project: NextSprintProject | undefined = !isFuture
     ? undefined
@@ -178,6 +184,20 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     }
   }
 
+  const decideRisk = async (blocker: Blocker, status: RiskDecisionStatus, note: string) => {
+    const riskId = blocker.risk_id
+    if (!riskId) return
+    setDecidingId(riskId)
+    try {
+      const response = await apiSetRiskDecision(riskId, { status, note })
+      setLocalDecisions((prev) => ({ ...prev, [riskId]: response.decision }))
+    } catch (e) {
+      console.error('Error recording risk decision:', e)
+    } finally {
+      setDecidingId(null)
+    }
+  }
+
   if (noProfile) {
     return (
       <div className="detail-shell">
@@ -274,10 +294,15 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
             <div className="detail-issues">
               {sprintBlockers.map((blocker, i) => {
                 const key = blocker.issue_key || `${blocker.type}-${blocker.sprint_key}-${i}`
+                const decision = blocker.risk_id
+                  ? localDecisions[blocker.risk_id] ?? blocker.decision
+                  : blocker.decision
+                const canDecide = !isFuture && !!blocker.risk_id && !offline
                 return (
                   <RiskCardItem
                     key={key}
-                    blocker={blocker}
+                    blocker={{ ...blocker, decision }}
+                    endDate={end}
                     showDraft={!isFuture && !!blocker.issue_key && !offline}
                     showCategory={isFuture}
                     drafting={draftingKey === blocker.issue_key}
@@ -286,6 +311,15 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
                     generatedBy={blocker.issue_key ? draftGeneratedBy[blocker.issue_key] : undefined}
                     fallbackReason={blocker.issue_key ? draftFallbackReasons[blocker.issue_key] : undefined}
                     onCopy={() => blocker.issue_key && copyDraft(blocker.issue_key)}
+                    onDecide={
+                      canDecide
+                        ? async (status, note) => {
+                            await decideRisk(blocker, status, note)
+                          }
+                        : undefined
+                    }
+                    deciding={decidingId === blocker.risk_id}
+                    offline={offline}
                   />
                 )
               })}

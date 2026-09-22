@@ -116,41 +116,53 @@ export const shortSprintName = (name?: string): string => {
   return match ? 'S' + match[1] : name.slice(0, 6)
 }
 
+const DAY_MS = 86400000
+
+// Resolve a UTC instant to its calendar date (as UTC-midnight) in `tz`
+// (defaults to the Jira timezone set via setJiraTimezone). Jira stores sprint
+// end dates in UTC, so an "ending Aug 24" sprint can serialize to Aug 23
+// 18:15Z and read as Aug 23 in raw UTC; interpreting it in the Jira timezone
+// keeps sprints that end on the same board date aligned with the user's Jira.
+const calendarMidnightUtc = (s?: string, tz: string | null = displayTimezone): number | null => {
+  if (!s) return null
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz || undefined,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .formatToParts(d)
+    .reduce<Record<string, string>>((acc, p) => {
+      if (p.type !== 'literal') acc[p.type] = p.value
+      return acc
+    }, {})
+  if (!parts.year || !parts.month || !parts.day) return null
+  return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day))
+}
+
+// Calendar days a sprint is past its end date (aligns with sprintDayLabel), or
+// null while the sprint is still within its dates.
+export const sprintOverdueDays = (endDate?: string, tz: string | null = displayTimezone): number | null => {
+  const end = calendarMidnightUtc(endDate, tz)
+  if (end === null) return null
+  const today = calendarMidnightUtc(new Date().toISOString(), tz)
+  if (today === null || today <= end) return null
+  return Math.max(1, Math.round((today - end) / DAY_MS))
+}
+
 export const sprintDayLabel = (
   startDate?: string,
   endDate?: string,
   tz: string | null = displayTimezone,
 ): string | null => {
   if (!startDate || !endDate) return null
-  const DAY_MS = 86400000
-  // Resolve a UTC instant to its calendar date in `tz` (defaults to the Jira
-  // timezone set via setJiraTimezone). Jira stores endDate in UTC, so a sprint
-  // "ending Aug 24" can serialize to Aug 23 18:15Z and read as Aug 23 in raw
-  // UTC; interpreting it in the Jira timezone keeps sprints that end on the same
-  // board date aligned with what the user sees in Jira.
-  const toTzMidnight = (s?: string): number | null => {
-    if (!s) return null
-    const d = new Date(s)
-    if (Number.isNaN(d.getTime())) return null
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz || undefined,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    })
-      .formatToParts(d)
-      .reduce<Record<string, string>>((acc, p) => {
-        if (p.type !== 'literal') acc[p.type] = p.value
-        return acc
-      }, {})
-    if (!parts.year || !parts.month || !parts.day) return null
-    return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day))
-  }
-  const start = toTzMidnight(startDate)
-  const end = toTzMidnight(endDate)
+  const start = calendarMidnightUtc(startDate, tz)
+  const end = calendarMidnightUtc(endDate, tz)
   if (start === null || end === null) return null
 
-  const today = toTzMidnight(new Date().toISOString())
+  const today = calendarMidnightUtc(new Date().toISOString(), tz)
   if (today === null) return null
 
   // Inclusive calendar-day span.

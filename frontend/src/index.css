@@ -2239,6 +2239,19 @@ body {
   color: var(--badge-low-dot);
 }
 
+.risk-card-item.critical .risk-score-text {
+  color: var(--badge-critical-text);
+}
+.risk-card-item.high .risk-score-text {
+  color: var(--badge-high-text);
+}
+.risk-card-item.medium .risk-score-text {
+  color: var(--badge-medium-text);
+}
+.risk-card-item.low .risk-score-text {
+  color: var(--badge-low-text);
+}
+
 .risk-card-item-header {
   display: flex;
   align-items: center;
@@ -2272,6 +2285,189 @@ body {
 
 .risk-card-item .draft-btn {
   margin-top: 10px;
+}
+
+/* ---------- risk transparency (signal → cause → action → decision) ---------- */
+.risk-transparency-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-secondary-500);
+}
+
+.risk-signal,
+.risk-cause,
+.risk-action,
+.risk-decision {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.risk-signal-headline {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink);
+  line-height: 1.4;
+}
+
+.risk-fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.risk-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.risk-fact-label {
+  color: var(--color-neutral-500);
+}
+
+.risk-fact-value {
+  color: var(--color-secondary-800);
+  font-weight: 600;
+  text-align: right;
+}
+
+.risk-cause-text,
+.risk-action-text {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--color-secondary-700);
+}
+
+.risk-decision-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.risk-decision-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.risk-decision-chip--accepted {
+  background: var(--color-primary-100);
+  color: var(--color-primary-800);
+}
+
+.risk-decision-chip--monitoring {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.risk-decision-chip--mitigating {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.risk-decision-chip--escalated {
+  background: var(--badge-critical-bg);
+  color: var(--badge-critical-text);
+  border: 1px solid var(--badge-critical-border);
+}
+
+.risk-decision-chip--dismissed {
+  background: var(--color-secondary-100);
+  color: var(--color-secondary-600);
+}
+
+.risk-decision-chip--pending {
+  background: var(--bg-surface);
+  color: var(--color-neutral-500);
+  border: 1px dashed var(--border-color);
+}
+
+.risk-decision-deciding {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.risk-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.risk-decision-btn {
+  background: var(--color-secondary-100);
+  color: var(--color-secondary-700);
+  border: 1px solid var(--color-secondary-300);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.risk-decision-btn:hover:not(:disabled) {
+  background: var(--color-secondary-200);
+}
+
+.risk-decision-btn--active {
+  background: var(--color-primary-100);
+  color: var(--color-primary-800);
+  border-color: var(--color-primary-300);
+}
+
+.risk-decision-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.risk-decision-note-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.risk-decision-note-input {
+  flex: 1;
+  min-width: 0;
+  background: #ffffff;
+  color: var(--color-secondary-800);
+  border: 1px solid var(--color-secondary-300);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.risk-decision-note-input:focus {
+  outline: none;
+  border-color: var(--color-primary-400);
+}
+
+.risk-decision-note {
+  margin: 8px 0 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-secondary-600);
+  border-left: 2px solid var(--color-secondary-300);
+  padding-left: 8px;
 }
 
 .work-item-list {

@@ -31,7 +31,7 @@ export default function NextSprintOverview({ onSelectDetail }: NextSprintOvervie
   return (
     <div className="next-sprint-overview">
       <SectionHeader
-        title="Future Sprint(s)"
+        title="Future Sprint(s) Readiness"
         count={projects.length}
         status={
           projects.length > 0
