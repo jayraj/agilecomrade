@@ -128,6 +128,8 @@ export interface Blocker {
   suspected_cause?: string
   suggested_action?: string
   decision?: RiskDecision
+  /** Human-readable "why is this risk critical/medium/low?" (score-driver math). */
+  severity_reason?: string
 }
 
 export interface Mitigation {

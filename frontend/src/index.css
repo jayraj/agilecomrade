@@ -2255,7 +2255,8 @@ body {
 .risk-card-item-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-bottom: 6px;
 }
 
@@ -2267,6 +2268,47 @@ body {
   font-size: 11px;
   font-weight: 600;
   text-transform: capitalize;
+}
+
+.risk-card-item-cat {
+  font-weight: 600;
+  color: var(--color-neutral-500);
+  text-transform: none;
+}
+
+.risk-card-item-sep {
+  opacity: 0.6;
+}
+
+.sev-with-tip {
+  position: relative;
+  cursor: help;
+}
+
+.sev-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: min(340px, calc(100vw - 48px));
+  background: var(--color-ink);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+  overflow-wrap: break-word;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-medium);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.sev-with-tip:hover .sev-tip {
+  opacity: 1;
 }
 
 .risk-card-item-title {

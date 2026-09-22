@@ -14,7 +14,6 @@ interface RiskCardItemProps {
   blocker: Blocker
   endDate?: string
   showDraft?: boolean
-  showCategory?: boolean
   drafting?: boolean
   onDraft?: () => void
   draft?: string
@@ -56,7 +55,6 @@ export default function RiskCardItem({
   blocker,
   endDate,
   showDraft,
-  showCategory,
   drafting,
   onDraft,
   draft,
@@ -98,9 +96,21 @@ export default function RiskCardItem({
       <div className="risk-card-item-header">
         <AlertCircle size={12} className="risk-card-item-icon" />
         <span className="risk-card-item-sev">
-          {severity.toLowerCase()}
-          {showCategory && categoryLabel ? `: ${categoryLabel}` : ''}
-        </span>
+        {blocker.severity_reason ? (
+          <span className="sev-with-tip">
+            {severity.toLowerCase()}
+            <span className="sev-tip">{blocker.severity_reason}</span>
+          </span>
+        ) : (
+          severity.toLowerCase()
+        )}
+        {categoryLabel && (
+          <>
+            <span className="risk-card-item-sep"> · </span>
+            <span className="risk-card-item-cat">{categoryLabel}</span>
+          </>
+        )}
+      </span>
       </div>
       <p className="risk-card-item-title">{title}</p>
 

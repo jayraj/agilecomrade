@@ -76,11 +76,21 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     ? project
     : snapshot?.radar_data.find((r) => r.sprint_key === sprintKey) ?? null
 
-  const sprintBlockers: Blocker[] = isFuture
-    ? futureRisks ?? []
-    : sprintKey
-      ? (snapshot?.blockers ?? []).filter((b) => b.sprint_key === sprintKey)
-      : []
+  const sevRank: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 }
+  const sortBlockersBySeverity = (list: Blocker[]): Blocker[] =>
+    [...list].sort((a, b) => {
+      const sa = sevRank[(a.severity ?? severityFromScore(a.risk_score)) ?? ''] ?? 0
+      const sb = sevRank[(b.severity ?? severityFromScore(b.risk_score)) ?? ''] ?? 0
+      return sb - sa
+    })
+
+  const sprintBlockers: Blocker[] = sortBlockersBySeverity(
+    isFuture
+      ? futureRisks ?? []
+      : sprintKey
+        ? (snapshot?.blockers ?? []).filter((b) => b.sprint_key === sprintKey)
+        : [],
+  )
 
   const sprintMitigation = mitigations.find((m) => m.sprint_key === sprintKey) || null
   const planVisible = !!sprintKey && planRequestedFor === sprintKey
@@ -90,7 +100,6 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     : undefined
   const workItems = isFuture ? futureIssues : (sprintDataEntry?.issues ?? [])
 
-  const sevRank: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 }
   const riskSeverityByKey = new Map<string, string>()
   if (!isFuture) {
     for (const b of sprintBlockers) {
@@ -304,7 +313,6 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
                     blocker={{ ...blocker, decision }}
                     endDate={end}
                     showDraft={!isFuture && !!blocker.issue_key && !offline}
-                    showCategory={isFuture}
                     drafting={draftingKey === blocker.issue_key}
                     onDraft={() => draftMessage(blocker)}
                     draft={blocker.issue_key ? drafts[blocker.issue_key] : undefined}

@@ -55,6 +55,21 @@ def _conf(risk: dict) -> str:
     return str(risk.get("confidence") or 0)
 
 
+# Score-to-severity bands, mirroring frontend/src/utils/format.ts:severityFromScore.
+_SEVERITY_BANDS = {"LOW": "(<20)", "MEDIUM": "(20-59)", "HIGH": "(60-79)", "CRITICAL": "(80+)"}
+
+
+def _severity_reason(risk: dict, drivers: str) -> str:
+    """Deterministic 'why is this risk critical/medium/low?' sentence."""
+    sev = (risk.get("severity") or "").upper()
+    band = _SEVERITY_BANDS.get(sev, "")
+    raw = risk.get("raw_score")
+    score = risk.get("risk_score")
+    raw_str = f"{raw:.0f}" if isinstance(raw, (int, float)) else str(raw or "?")
+    score_str = f"{score:.0f}" if isinstance(score, (int, float)) else str(score or "?")
+    return f"Why {sev}? {drivers} → raw {raw_str} → score {score_str} → {sev} {band}".rstrip()
+
+
 def _chips(items: list[str], limit: int = 3) -> str:
     if not items:
         return ""
@@ -96,6 +111,10 @@ def _default_explainer(risk: dict) -> None:
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
     )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"the '{risk.get('type')}' rule flagged this from the sprint data (confidence {c}%)",
+    )
 
 
 def _story_not_progressing(risk: dict) -> None:
@@ -116,6 +135,11 @@ def _story_not_progressing(risk: dict) -> None:
     )
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
+    )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{h:.0f}h of silence × stage weight {risk.get('stage_weight')} × "
+        f"assignee load {risk.get('assignee_factor')} × ticket size {risk.get('size_weight')}",
     )
 
 
@@ -139,6 +163,10 @@ def _sprint_not_started(risk: dict) -> None:
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
     )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"sprint started {days}d ago yet all {open_count} open tickets are still in a start column",
+    )
 
 
 def _burndown_behind(risk: dict) -> None:
@@ -160,6 +188,10 @@ def _burndown_behind(risk: dict) -> None:
     )
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
+    )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{gap:.0f}% gap vs the ideal burn line with only {risk.get('days_remaining')} days left",
     )
 
 
@@ -188,6 +220,10 @@ def _qa_bottleneck(risk: dict) -> None:
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
     )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{n} stories queued needing ~{clear_days or '?'} days to clear but only {days_left} days left (× time pressure)",
+    )
 
 
 def _external_dependency(risk: dict) -> None:
@@ -210,6 +246,11 @@ def _external_dependency(risk: dict) -> None:
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
     )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"'{key}' depends on {risk.get('dependency_detail') or 'an external party'} "
+        f"(base {risk.get('dependency_base')} × fan-out {risk.get('fan_out')})",
+    )
 
 
 def _due_date_passed(risk: dict) -> None:
@@ -231,6 +272,11 @@ def _due_date_passed(risk: dict) -> None:
     )
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
+    )
+    max_days = max((int(o.get("days_overdue") or 0) for o in overdue), default=0)
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{count} ticket(s) past their due date, the worst by {max_days} day(s)",
     )
 
 
@@ -256,6 +302,10 @@ def _bug_raised(risk: dict) -> None:
     )
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
+    )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{tier} defect '{key or 'unknown'}' is {age:.0f} day(s) old (priority {risk.get('priority')})",
     )
 
 
@@ -284,6 +334,10 @@ def _scope_creep(risk: dict) -> None:
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
     )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{growth:.0f}% scope growth over baseline (+{added} issues, {hiked} estimate hike(s))",
+    )
 
 
 def _sprint_ended(risk: dict) -> None:
@@ -305,6 +359,10 @@ def _sprint_ended(risk: dict) -> None:
     )
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
+    )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{days_over} day(s) overdue with {remaining} SP still unfinished",
     )
 
 
@@ -332,6 +390,10 @@ def _next_sprint_type(risk: dict) -> None:
     )
     risk["suggested_action"] = (
         risk.get("recommendation") or risk.get("summary") or ""
+    )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{count} planned issue(s) {blurb}",
     )
 
 

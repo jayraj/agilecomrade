@@ -60,6 +60,48 @@ def test_story_signal_facts_and_cause() -> None:
     assert r["suggested_action"] == "Check with Alice for blockers."
 
 
+def test_story_severity_reason_matches_band_and_drivers() -> None:
+    r = _risk(
+        severity="HIGH",
+        risk_score=62,
+        raw_score=68.2,
+        stage_weight=1.2,
+        assignee_factor=1.4,
+        size_weight=0.9,
+    )
+    explain_risk(r)
+    reason = r["severity_reason"]
+    assert reason.startswith("Why HIGH?")
+    assert "36h of silence" in reason
+    assert "stage weight 1.2" in reason
+    assert "assignee load 1.4" in reason
+    assert "ticket size 0.9" in reason
+    assert "raw 68" in reason
+    assert "score 62" in reason
+    assert "HIGH (60-79)" in reason
+
+
+def test_burndown_severity_reason() -> None:
+    r = _risk(
+        type="BURNDOWN_BEHIND",
+        issue_key=None,
+        sprint_key="Sprint 42",
+        burndown_gap_percent=18.4,
+        remaining_sp=12.0,
+        days_remaining=3,
+        completed_sp=8,
+        total_sp=20,
+        severity="HIGH",
+        risk_score=71,
+        raw_score=71.4,
+    )
+    explain_risk(r)
+    assert r["severity_reason"].startswith("Why HIGH?")
+    assert "18% gap" in r["severity_reason"]
+    assert "3 days left" in r["severity_reason"]
+    assert "(60-79)" in r["severity_reason"]
+
+
 def test_burndown_signal() -> None:
     r = _risk(
         type="BURNDOWN_BEHIND",
@@ -85,6 +127,7 @@ def test_unknown_type_gets_universal_fallback() -> None:
     assert r["signal"]["facts"]
     assert "MYSTERY_RULE" in r["suspected_cause"]
     assert r["suggested_action"] == "Check with Alice for blockers."
+    assert r["severity_reason"].startswith("Why HIGH?")
 
 
 def test_reconcile_marks_cleared_and_touches_last_seen() -> None:
