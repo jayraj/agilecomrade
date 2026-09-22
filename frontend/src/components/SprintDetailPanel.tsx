@@ -143,7 +143,9 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     setAnalyzing(true)
     try {
       const response = await apiNextSprintRisks(project.project_key)
-      setFutureRisks((response.risks || []).sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0)))
+      setFutureRisks(
+        (response.risks || []).sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0)),
+      )
     } catch (e) {
       console.error('Error analyzing next sprint risks:', e)
       setFutureRisks([])
@@ -312,6 +314,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
                     key={key}
                     blocker={{ ...blocker, decision }}
                     endDate={end}
+                    hideSignal={isFuture}
                     showDraft={!isFuture && !!blocker.issue_key && !offline}
                     drafting={draftingKey === blocker.issue_key}
                     onDraft={() => draftMessage(blocker)}

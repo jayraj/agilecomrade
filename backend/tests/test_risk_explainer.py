@@ -47,6 +47,24 @@ def test_risk_id_branches_by_type_and_target() -> None:
     assert sprint not in (ticket, other_ticket)
 
 
+def test_sprint_level_risk_id_ignores_volatile_issue_keys() -> None:
+    # Sprint-wide risks have no single issue_key; their id must survive the
+    # issue_keys set changing between syncs (issues opening/closing) so a
+    # recorded human decision re-attaches after a rebuild.
+    a = stable_risk_id(
+        {"type": "BURNDOWN_BEHIND", "sprint_key": "Sprint 42", "issue_keys": ["AC-101", "AC-102"]}
+    )
+    b = stable_risk_id(
+        {"type": "BURNDOWN_BEHIND", "sprint_key": "Sprint 42", "issue_keys": ["AC-101", "AC-103"]}
+    )
+    assert a == b
+    # Different sprints of the same type must stay distinct (no collision).
+    c = stable_risk_id(
+        {"type": "BURNDOWN_BEHIND", "sprint_key": "Sprint 41", "issue_keys": ["AC-101", "AC-102"]}
+    )
+    assert a != c
+
+
 def test_story_signal_facts_and_cause() -> None:
     r = _risk()
     explain_risk(r)

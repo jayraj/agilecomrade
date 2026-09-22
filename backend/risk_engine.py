@@ -827,7 +827,7 @@ class RiskEngine:
                 "severity": "MEDIUM",
                 "recommendation": (
                     f"{len(undefined)} issue(s) lack defined acceptance criteria. "
-                    "Clarify acceptance criteria before planning."
+                    "Align with Business/PO and clarify Acceptance Criteria before planning."
                 ),
             })
 

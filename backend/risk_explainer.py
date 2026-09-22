@@ -23,13 +23,14 @@ _MAX_DECISIONS = 200
 def stable_risk_id(risk: dict) -> str:
     """Deterministic, sync-stable identity for a risk.
 
-    Keyed on risk type + sprint + affected issue keys so a human decision made
-    today re-attaches after the next sync even as symptom values (hours since
-    update, gap %, …) change.
+    Keyed on risk type + sprint + the single anchored issue key so a human
+    decision made today re-attaches after the next sync even as symptom values
+    (hours since update, gap %, …) and the volatile `issue_keys` set change.
+    Ticket-level risks anchor on their `issue_key`; sprint-wide risks anchor
+    on type + sprint only (each sprint-level detector emits at most one risk
+    per type per sprint), keeping the id stable as issues open/close.
     """
-    keys = [str(k) for k in (risk.get("issue_keys") or []) if k]
-    if not keys and risk.get("issue_key"):
-        keys = [str(risk["issue_key"])]
+    keys = [str(risk["issue_key"])] if risk.get("issue_key") else []
     base = f'{risk.get("type") or ""}:{risk.get("sprint_key") or "":}'
     base += ",".join(sorted(keys))
     return hashlib.sha1(base.encode("utf-8")).hexdigest()[:12]

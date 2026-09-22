@@ -18,7 +18,7 @@ from jira_fetcher import JiraFetcher, fetch_all
 from mitigation_agent import MitigationAgent
 from risk_components import now_utc, to_utc
 from risk_engine import RiskEngine
-from risk_explainer import DECISION_STATUSES
+from risk_explainer import DECISION_STATUSES, explain_risk
 from snapshot import build_snapshot
 from supabase_store import DuplicateProfileError, SupabaseStore
 
@@ -861,6 +861,8 @@ def next_sprint_risks(request: Request, body: dict = None):
         issues=issues,
         rule_based_risks=rule_based_risks,
     )
+    for r in risks:
+        explain_risk(r)
     logger.info(
         f"⏱️ next_sprint_risks | snapshot={t_snap:.2f}s llm={time.time() - t_llm0:.2f}s "
         f"total={time.time() - t0:.2f}s project={project_key}"

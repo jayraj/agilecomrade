@@ -13,6 +13,7 @@ import type { Blocker, RiskDecisionStatus } from '../api/client'
 interface RiskCardItemProps {
   blocker: Blocker
   endDate?: string
+  hideSignal?: boolean
   showDraft?: boolean
   drafting?: boolean
   onDraft?: () => void
@@ -40,20 +41,36 @@ const DECISION_OPTIONS: RiskDecisionStatus[] = [
   'dismissed',
 ]
 
-const DECISION_META: Record<string, { label: string; className: string }> = {
-  accepted: { label: 'Accepted', className: 'accepted' },
-  monitoring: { label: 'Monitoring', className: 'monitoring' },
-  mitigating: { label: 'Mitigating', className: 'mitigating' },
-  escalated: { label: 'Escalated', className: 'escalated' },
-  dismissed: { label: 'Dismissed', className: 'dismissed' },
-  pending: { label: 'Decision needed', className: 'pending' },
+const DECISION_META: Record<string, { label: string; short: string; className: string }> = {
+  accepted: { label: 'Accepted', short: 'accepted', className: 'accepted' },
+  monitoring: { label: 'Monitoring', short: 'monitoring', className: 'monitoring' },
+  mitigating: { label: 'Mitigating', short: 'mitigating', className: 'mitigating' },
+  escalated: { label: 'Escalated', short: 'escalated', className: 'escalated' },
+  dismissed: { label: 'Dismissed', short: 'dismissed', className: 'dismissed' },
+  pending: { label: 'Decision needed', short: 'needed', className: 'pending' },
 }
 
 const TRANSPARENCY_LABEL = 'risk-transparency-label'
 
+// Normalize legacy recommendation wording so the shown Suggested action is always
+// the current copy even if a stale backend serve the old sentence.
+const ACTION_REWRITE: Record<string, string> = {
+  'Clarify acceptance criteria before planning.': 'Align with Business/PO and clarify Acceptance Criteria before planning.',
+}
+
+const patchAction = (text?: string): string | undefined => {
+  if (!text) return undefined
+  let out = text
+  for (const [from, to] of Object.entries(ACTION_REWRITE)) {
+    out = out.includes(from) ? out.replace(from, to) : out
+  }
+  return out
+}
+
 export default function RiskCardItem({
   blocker,
   endDate,
+  hideSignal,
   showDraft,
   drafting,
   onDraft,
@@ -70,6 +87,16 @@ export default function RiskCardItem({
   const title = riskTitle(blocker)
   const categoryLabel = blocker.type ? formatRiskType(blocker.type) : ''
   const issueKey = blocker.issue_key
+
+  const rec = (blocker.recommendation || '').trim()
+  const recParts = rec.match(/^(.*?[.!?])\s+(.*)$/)
+  const suspectedCause =
+    blocker.suspected_cause || (blocker.suggested_action ? undefined : recParts?.[1] || undefined)
+  const suggestedAction = blocker.suggested_action
+    ? patchAction(blocker.suggested_action)
+    : rec
+      ? patchAction(recParts?.[2] || rec)
+      : undefined
 
   const [pendingStatus, setPendingStatus] = useState<RiskDecisionStatus | null>(null)
   const [note, setNote] = useState('')
@@ -96,14 +123,7 @@ export default function RiskCardItem({
       <div className="risk-card-item-header">
         <AlertCircle size={12} className="risk-card-item-icon" />
         <span className="risk-card-item-sev">
-        {blocker.severity_reason ? (
-          <span className="sev-with-tip">
-            {severity.toLowerCase()}
-            <span className="sev-tip">{blocker.severity_reason}</span>
-          </span>
-        ) : (
-          severity.toLowerCase()
-        )}
+        {severity.toLowerCase()}
         {categoryLabel && (
           <>
             <span className="risk-card-item-sep"> · </span>
@@ -114,12 +134,12 @@ export default function RiskCardItem({
       </div>
       <p className="risk-card-item-title">{title}</p>
 
-      {blocker.signal && (
+      {!hideSignal && blocker.signal && (
         <div className="risk-signal">
           <div className={TRANSPARENCY_LABEL}>
-            Signal
+            Risk Signals
             {blocker.risk_score != null && (
-              <span className="risk-score-text"> (Risk score: {Math.round(blocker.risk_score)})</span>
+              <span className="risk-score-text"> (Score: {Math.round(blocker.risk_score)})</span>
             )}
           </div>
           <div className="risk-signal-headline">{blocker.signal.label}</div>
@@ -143,17 +163,17 @@ export default function RiskCardItem({
         </div>
       )}
 
-      {blocker.suspected_cause && (
+      {suspectedCause && (
         <div className="risk-cause">
           <div className={TRANSPARENCY_LABEL}>Suspected cause</div>
-          <p className="risk-cause-text">{blocker.suspected_cause}</p>
+          <p className="risk-cause-text">{suspectedCause}</p>
         </div>
       )}
 
-      {(blocker.suggested_action || ((showDraft || draft) && issueKey)) && (
+      {(suggestedAction || ((showDraft || draft) && issueKey)) && (
         <div className="risk-action">
-          <div className={TRANSPARENCY_LABEL}>Suggested action</div>
-          {blocker.suggested_action && <p className="risk-action-text">{blocker.suggested_action}</p>}
+          <div className={TRANSPARENCY_LABEL}>Suggested actions</div>
+          {suggestedAction && <p className="risk-action-text">{suggestedAction}</p>}
           {showDraft && issueKey && (
             <button className="draft-btn" disabled={drafting} onClick={onDraft}>
               {drafting ? 'Drafting...' : '💬 Draft Message'}
@@ -179,11 +199,16 @@ export default function RiskCardItem({
 
       <div className="risk-decision">
         <div className="risk-decision-head">
-          <div className={TRANSPARENCY_LABEL}>Human decision</div>
-          <span className={`risk-decision-chip risk-decision-chip--${decisionMeta.className}`}>
-            {decisionMeta.label}
+          <div
+            className={
+              status !== 'pending'
+                ? `${TRANSPARENCY_LABEL} risk-decision-chip risk-decision-chip--${decisionMeta.className}`
+                : TRANSPARENCY_LABEL
+            }
+          >
+            Human decision ({decisionMeta.short})
             {deciding && <span className="risk-decision-deciding"> saving…</span>}
-          </span>
+          </div>
         </div>
         {onDecide && (
           <>

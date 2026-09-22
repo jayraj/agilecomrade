@@ -353,12 +353,16 @@ def build_snapshot(sprint_data, next_sprint_data, velocity_data, risks, burndown
     # Transparency enrichment: every risk gets a stable identity plus the
     # Signal / Suspected cause / Suggested action fields, and is linked to any
     # human decision the user recorded for it (persisted across syncs under the
-    # snapshot's risk_decisions key, keyed by stable_risk_id).
-    risk_decisions = reconcile_decisions(risks, risk_decisions or {})
+    # snapshot's risk_decisions key, keyed by stable_risk_id). Risk ids are
+    # assigned FIRST so reconcile_decisions can tell still-detected risks from
+    # resolved ones (last_seen vs outcome: cleared).
     for risk in risks:
         if not risk.get("sprint_key"):
             risk["sprint_key"] = lookup.get(risk.get("issue_key"))
         risk["risk_id"] = stable_risk_id(risk)
+
+    risk_decisions = reconcile_decisions(risks, risk_decisions or {})
+    for risk in risks:
         explain_risk(risk)
         decision = risk_decisions.get(risk["risk_id"])
         risk["decision"] = decision or {"status": PENDING_STATUS}
