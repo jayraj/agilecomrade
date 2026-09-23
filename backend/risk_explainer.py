@@ -92,6 +92,65 @@ def explain_risk(risk: dict) -> None:
     rtype = risk.get("type")
     fn = _EXPLAINERS.get(rtype, _default_explainer)
     fn(risk)
+    attach_factors(risk)
+
+
+# Multipliers reused in the score math — kept symbolic here and mirrored in the
+# engine's serialized factors so the chip label can show the exact same number
+# that went into raw_score. This is an additive, explainer-only helper: it reads
+# the structured engine factors already latched onto each risk and does not touch
+# the scoring rubric.
+def attach_factors(risk: dict) -> None:
+    """Add an additive structured `factors` block for score math transparency.
+
+    Renders the exact numeric drivers the engine used to compute this risk's
+    score (band = score-band chips; weight/fan-out etc. = per-driver chips), and
+    never string-parses severity_reason. The rubric and severity math are fully
+    untouched — the block is purely additive serialization, added once here where
+    every risk already passes through in both snapshot payload paths.
+    """
+    sev = (risk.get("severity") or "").upper()
+    band = _SEVERITY_BANDS.get(sev, "")
+    raw = risk.get("raw_score")
+    score = risk.get("risk_score")
+    band_chips = []
+    if band and sev:
+        raw_str = _fmt(raw) if raw is not None else "?"
+        score_str = _fmt(score) if score is not None else "?"
+        band_chips.append(f"{sev} {band} (raw {raw_str} → score {score_str})".rstrip())
+
+    factor_chips = []
+    # Multiplier drivers the engine already latches onto each risk. Only drivers
+    # with a non-neutral value are shown.
+    spec = [
+        ("stage_weight", "stage", "🧱"),
+        ("assignee_factor", "assignee", "🙋"),
+        ("size_weight", "size", "⚖️"),
+        ("fan_out", "fan-out", "🔀"),
+    ]
+    for key, label, icon in spec:
+        value = risk.get(key)
+        if value is None:
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if abs(value - 1.0) < 0.001:
+            continue
+        factor_chips.append({"icon": icon, "label": f"{label} ×{value:g}"})
+
+    risk["factors"] = {
+        "band": band_chips,
+        "drivers": factor_chips,
+    }
+
+
+_FACTOR_ICONS = {
+    "fan_out": "🔀",
+    "fan_out_count": "🔀",
+    "assignee_count": "👥",
+}
 
 
 def _default_explainer(risk: dict) -> None:

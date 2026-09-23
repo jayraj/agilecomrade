@@ -4,6 +4,7 @@ import { useSnapshot } from '../hooks/useSnapshot'
 import { useSync } from '../context/SyncContext'
 import SprintCard from './SprintCard'
 import SectionHeader from './SectionHeader'
+import RiskScoreLegend from './RiskScoreLegend'
 import type { Blocker } from '../api/client'
 
 interface RiskRadarProps {
@@ -39,6 +40,7 @@ export default function RiskRadar({ onSelectDetail }: RiskRadarProps) {
         count={radarData.length}
         status={{ label: `${snapshot?.total_risks ?? 0} risks`, tone: 'amber' }}
       />
+      <RiskScoreLegend />
       <p className="component-subtitle">Live risk scores for your active sprints — spot stalled tickets, burndown gaps, and fresh bugs early enough to act.</p>
       {radarData.length > 0 && (
         <div className="portfolio-meta">

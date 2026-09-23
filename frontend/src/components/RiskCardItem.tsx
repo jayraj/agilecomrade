@@ -7,6 +7,7 @@ import {
   formatRiskType,
   sanitizeInlineHtml,
   sprintOverdueDays,
+  scoreDrivers,
 } from '../utils/format'
 import type { Blocker, RiskDecisionStatus } from '../api/client'
 
@@ -158,6 +159,38 @@ export default function RiskCardItem({
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {scoreDrivers(blocker).length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px',
+                marginTop: '10px',
+              }}
+            >
+              {scoreDrivers(blocker).map((c, i) => (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: '#3f3f46',
+                    background: '#f4f4f5',
+                    border: '1px solid #e4e4e7',
+                    borderRadius: '999px',
+                    padding: '3px 9px',
+                  }}
+                >
+                  {c.icon && <span aria-hidden>{c.icon}</span>}
+                  {c.label}
+                </span>
+              ))}
             </div>
           )}
         </div>

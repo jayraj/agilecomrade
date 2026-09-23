@@ -130,6 +130,15 @@ export interface Blocker {
   decision?: RiskDecision
   /** Human-readable "why is this risk critical/medium/low?" (score-driver math). */
   severity_reason?: string
+  /** Score-math transparency: band + driver chips the backend explainer latched
+   *  (`attach_factors` in backend/risk_explainer.py). `band` is plain string[]
+   *  (full "SEVERITY (range) (raw X → score Y)" chip labels), `drivers` are the
+   *  exact {icon,label} multipliers that produced raw_score. Additive: absent on
+   *  legacy payloads, so all reads defensively fall back to severity_reason. */
+  factors?: {
+    band?: string[]
+    drivers?: { icon?: string; label?: string }[]
+  } | null
 }
 
 export interface Mitigation {
