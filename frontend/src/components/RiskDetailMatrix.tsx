@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { ChevronRight, Grid3x3 } from 'lucide-react'
 
 const PROBABILITY = [
-  { label: 'Rare', score: 1, odds: '~4%' },
-  { label: 'Unlikely', score: 2, odds: '~8%' },
-  { label: 'Possible', score: 3, odds: '~12%' },
-  { label: 'Likely', score: 4, odds: '~16%' },
-  { label: 'Almost Certain', score: 5, odds: '~20%' },
+  { label: 'Rare', score: 1 },
+  { label: 'Unlikely', score: 2 },
+  { label: 'Possible', score: 3 },
+  { label: 'Likely', score: 4 },
+  { label: 'Almost Certain', score: 5 },
 ]
 
 const IMPACT = [
@@ -28,6 +28,8 @@ const bandFor = (value: number): string => {
   const hit = SCALE.find((s) => value <= s.max)
   return (hit ?? SCALE[SCALE.length - 1]).band
 }
+
+const oddsFor = (score: number): number => score * 20
 
 export default function RiskDetailMatrix() {
   const [open, setOpen] = useState(false)
@@ -51,41 +53,44 @@ export default function RiskDetailMatrix() {
           <p className="risk-matrix-caption">
             Reference scale for reading risk severity. Scoring is not wired to this matrix yet.
           </p>
-          <div className="risk-matrix-grid">
-            <div className="risk-matrix-corner">
-              <span className="risk-matrix-axis">Probability ↓</span>
-              <span className="risk-matrix-axis">Impact →</span>
-            </div>
-            {IMPACT.map((impact) => (
-              <div key={impact.score} className="risk-matrix-col-head">
-                <span className="risk-matrix-col-score">{impact.score}</span>
-                <span className="risk-matrix-col-label">{impact.label}</span>
+          <div className="risk-matrix-scroll">
+            <div className="risk-matrix-grid" role="table">
+              <div className="risk-matrix-corner" role="columnheader">
+                <span className="risk-matrix-axis">Probability ↓</span>
+                <span className="risk-matrix-axis">Impact →</span>
               </div>
-            ))}
-            {PROBABILITY.map((prob) => (
-              <div key={prob.score} className="risk-matrix-row">
-                <div className="risk-matrix-row-head">
-                  <span className="risk-matrix-row-label">{prob.label}</span>
-                  <span className="risk-matrix-row-odds">
-                    {prob.score} · {prob.odds}
-                  </span>
+              {IMPACT.map((impact) => (
+                <div key={impact.score} className="risk-matrix-col-head" role="columnheader">
+                  <span className="risk-matrix-col-score">{impact.score}</span>
+                  <span className="risk-matrix-col-label">{impact.label}</span>
                 </div>
-                {IMPACT.map((impact) => {
-                  const value = prob.score * impact.score
-                  const band = bandFor(value)
-                  return (
-                    <div
-                      key={`${prob.score}-${impact.score}`}
-                      className={`risk-matrix-cell ${band.toLowerCase()}`}
-                      title={`${prob.label} × ${impact.label} = ${value} (${band})`}
-                    >
-                      <span className="risk-matrix-cell-value">{value}</span>
-                      <span className="risk-matrix-cell-band">{band}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
+              ))}
+              {PROBABILITY.map((prob) => (
+                <Fragment key={prob.score}>
+                  <div className="risk-matrix-row-head" role="rowheader">
+                    <span className="risk-matrix-row-label">{prob.label}</span>
+                    <span className="risk-matrix-row-odds">
+                      {prob.score} · {oddsFor(prob.score)}%
+                    </span>
+                  </div>
+                  {IMPACT.map((impact) => {
+                    const value = prob.score * impact.score
+                    const band = bandFor(value)
+                    return (
+                      <div
+                        key={`${prob.score}-${impact.score}`}
+                        className={`risk-matrix-cell ${band.toLowerCase()}`}
+                        role="cell"
+                        title={`${prob.label} × ${impact.label} = ${value} (${band})`}
+                      >
+                        <span className="risk-matrix-cell-value">{value}</span>
+                        <span className="risk-matrix-cell-band">{band}</span>
+                      </div>
+                    )
+                  })}
+                </Fragment>
+              ))}
+            </div>
           </div>
         </div>
       )}
