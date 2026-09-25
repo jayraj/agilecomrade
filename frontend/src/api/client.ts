@@ -83,11 +83,10 @@ export interface RiskSignal {
 
 export type RiskDecisionStatus =
   | 'pending'
+  | 'resolved'
+  | 'owned'
   | 'accepted'
-  | 'monitoring'
-  | 'mitigating'
-  | 'escalated'
-  | 'dismissed'
+  | 'mitigated'
 
 export interface RiskDecision {
   status: RiskDecisionStatus

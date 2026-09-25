@@ -2378,30 +2378,26 @@ body {
   white-space: nowrap;
 }
 
+/* ROAM decision chips. Colors come from shared tokens so the chips stay in
+   step with the severity palette rather than hardcoded hex. */
+.risk-decision-chip--resolved {
+  background: var(--color-secondary-100);
+  color: var(--color-secondary-600);
+}
+
+.risk-decision-chip--owned {
+  background: var(--badge-medium-bg);
+  color: var(--badge-medium-text);
+}
+
 .risk-decision-chip--accepted {
   background: var(--color-primary-100);
   color: var(--color-primary-800);
 }
 
-.risk-decision-chip--monitoring {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.risk-decision-chip--mitigating {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.risk-decision-chip--escalated {
-  background: var(--badge-critical-bg);
-  color: var(--badge-critical-text);
-  border: 1px solid var(--badge-critical-border);
-}
-
-.risk-decision-chip--dismissed {
-  background: var(--color-secondary-100);
-  color: var(--color-secondary-600);
+.risk-decision-chip--mitigated {
+  background: var(--badge-low-bg);
+  color: var(--badge-low-text);
 }
 
 .risk-decision-deciding {

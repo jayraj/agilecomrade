@@ -34,20 +34,19 @@ const SEVERITY_CLASS: Record<string, string> = {
   LOW: 'low',
 }
 
+// ROAM (Scaled Agile) risk dispositions: Resolved / Owned / Accepted / Mitigated.
 const DECISION_OPTIONS: RiskDecisionStatus[] = [
+  'resolved',
+  'owned',
   'accepted',
-  'monitoring',
-  'mitigating',
-  'escalated',
-  'dismissed',
+  'mitigated',
 ]
 
 const DECISION_META: Record<string, { label: string; short: string; className: string }> = {
+  resolved: { label: 'Resolved', short: 'resolved', className: 'resolved' },
+  owned: { label: 'Owned', short: 'owned', className: 'owned' },
   accepted: { label: 'Accepted', short: 'accepted', className: 'accepted' },
-  monitoring: { label: 'Monitoring', short: 'monitoring', className: 'monitoring' },
-  mitigating: { label: 'Mitigating', short: 'mitigating', className: 'mitigating' },
-  escalated: { label: 'Escalated', short: 'escalated', className: 'escalated' },
-  dismissed: { label: 'Dismissed', short: 'dismissed', className: 'dismissed' },
+  mitigated: { label: 'Mitigated', short: 'mitigated', className: 'mitigated' },
   pending: { label: 'Decision needed', short: 'needed', className: 'pending' },
 }
 

@@ -14,10 +14,27 @@ from typing import Any
 
 from risk_matrix import IMPACT_LABELS, PROBABILITY_LABELS
 
-# Statuses a scrum master can attach to a risk (human decision). "pending" is
-# the engine-authored default meaning no human decision has been recorded yet.
-DECISION_STATUSES = ("accepted", "monitoring", "mitigating", "escalated", "dismissed")
+# Human decision statuses follow ROAM, the Scaled Agile risk-disposition
+# framework: Resolved / Owned / Accepted / Mitigated. "pending" is the
+# engine-authored default meaning no human decision has been recorded yet.
+#
+#   resolved  - the risk is no longer a concern
+#   owned     - someone owns it; not resolved, no mitigation plan yet
+#   accepted  - it cannot be resolved, so it is understood and taken as-is
+#   mitigated - a plan is in place to reduce its probability or impact
+DECISION_STATUSES = ("resolved", "owned", "accepted", "mitigated")
 PENDING_STATUS = "pending"
+
+# Pre-ROAM statuses, mapped so decisions already persisted in a profile's
+# `risk_decisions` ledger migrate on read instead of silently reverting to
+# "decision needed". `monitoring` and `escalated` both become `owned`: a person
+# is accountable for the risk either way.
+LEGACY_STATUS_MAP = {
+    "dismissed": "resolved",
+    "mitigating": "mitigated",
+    "monitoring": "owned",
+    "escalated": "owned",
+}
 
 _MAX_DECISIONS = 200
 
@@ -529,12 +546,18 @@ _EXPLAINERS = {
 ALL_EXPLAINED_TYPES = set(_EXPLAINERS)
 
 
+def normalize_decision_status(status):
+    """Map a pre-ROAM status onto its ROAM equivalent; pass ROAM statuses through."""
+    return LEGACY_STATUS_MAP.get(status, status)
+
+
 def reconcile_decisions(risks: list[dict], risk_decisions: dict) -> dict:
     """Reconcile the persisted decision ledger against the current risk set.
 
+    - Migrates any pre-ROAM status to its ROAM equivalent (see LEGACY_STATUS_MAP).
     - Touches `last_seen` on decisions whose risk is still detected.
-    - Marks a decided-but-now-absent risk as cleared (unless already dismissed
-      or resolved), so the ledger records the outcome of a decision.
+    - Marks a decided-but-now-absent risk as cleared (unless already resolved),
+      so the ledger records the outcome of a decision.
     - Caps the ledger size to keep the snapshot bounded.
     """
     current_ids = {r.get("risk_id") for r in risks if r.get("risk_id")}
@@ -542,9 +565,10 @@ def reconcile_decisions(risks: list[dict], risk_decisions: dict) -> dict:
     out: dict = {}
     for rid, dec in risk_decisions.items():
         d = dict(dec or {})
+        d["status"] = normalize_decision_status(d.get("status"))
         if rid in current_ids:
             d["last_seen"] = now
-        elif d.get("status") not in ("dismissed",) and not d.get("outcome"):
+        elif d.get("status") != "resolved" and not d.get("outcome"):
             d["outcome"] = "cleared"
             d["resolved_at"] = now
         out[rid] = d

@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from risk_explainer import (
+    LEGACY_STATUS_MAP,
     PENDING_STATUS,
     DECISION_STATUSES,
     explain_risk,
@@ -190,21 +191,50 @@ def test_reconcile_marks_cleared_and_touches_last_seen() -> None:
     risk = _risk()
     risk["risk_id"] = stable_risk_id(risk)
     ledger = {
-        risk["risk_id"]: {"status": "monitoring", "decided_at": "2026-01-01T00:00:00+00:00"},
-        "gone-risk-123": {"status": "mitigating", "decided_at": "2026-01-02T00:00:00+00:00"},
-        "gone-dismissed-456": {"status": "dismissed", "decided_at": "2026-01-03T00:00:00+00:00"},
+        risk["risk_id"]: {"status": "owned", "decided_at": "2026-01-01T00:00:00+00:00"},
+        "gone-risk-123": {"status": "mitigated", "decided_at": "2026-01-02T00:00:00+00:00"},
+        "gone-resolved-456": {"status": "resolved", "decided_at": "2026-01-03T00:00:00+00:00"},
     }
     out = reconcile_decisions([risk], ledger)
     assert out[risk["risk_id"]]["last_seen"]  # still detected → marked as seen
     assert out["gone-risk-123"]["outcome"] == "cleared"  # gone → cleared
     assert out["gone-risk-123"]["resolved_at"]
-    assert "outcome" not in out["gone-dismissed-456"]  # dismissed stays dismissed
+    assert "outcome" not in out["gone-resolved-456"]  # resolved stays resolved
+
+
+def test_reconcile_migrates_legacy_pre_roam_statuses() -> None:
+    """Decisions recorded before ROAM must remap, not revert to 'pending'."""
+    ledger = {
+        "a": {"status": "dismissed", "decided_at": "2026-01-01T00:00:00+00:00"},
+        "b": {"status": "mitigating", "decided_at": "2026-01-02T00:00:00+00:00"},
+        "c": {"status": "monitoring", "decided_at": "2026-01-03T00:00:00+00:00"},
+        "d": {"status": "escalated", "decided_at": "2026-01-04T00:00:00+00:00"},
+        "e": {"status": "accepted", "decided_at": "2026-01-05T00:00:00+00:00"},
+    }
+    out = reconcile_decisions([{"risk_id": rid} for rid in ledger], ledger)
+    assert out["a"]["status"] == "resolved"
+    assert out["b"]["status"] == "mitigated"
+    assert out["c"]["status"] == "owned"
+    assert out["d"]["status"] == "owned"
+    assert out["e"]["status"] == "accepted"
+    for d in out.values():
+        assert d["status"] in DECISION_STATUSES
+
+
+def test_reconcile_migrates_legacy_resolved_without_clearing_it() -> None:
+    """A legacy 'dismissed' decision that is now gone must not also be 'cleared'."""
+    out = reconcile_decisions(
+        [],
+        {"x": {"status": "dismissed", "decided_at": "2026-01-01T00:00:00+00:00"}},
+    )
+    assert out["x"]["status"] == "resolved"
+    assert "outcome" not in out["x"]
 
 
 def test_reconcile_does_not_reflags_already_cleared() -> None:
     out = reconcile_decisions(
         [],
-        {"x": {"status": "monitoring", "decided_at": "2026-01-01T00:00:00+00:00", "outcome": "cleared"}},
+        {"x": {"status": "owned", "decided_at": "2026-01-01T00:00:00+00:00", "outcome": "cleared"}},
     )
     assert out["x"]["outcome"] == "cleared"
     assert out["x"]["decided_at"] == "2026-01-01T00:00:00+00:00"
@@ -212,8 +242,12 @@ def test_reconcile_does_not_reflags_already_cleared() -> None:
 
 def test_status_contract() -> None:
     assert PENDING_STATUS == "pending"
-    assert "accepted" in DECISION_STATUSES
-    assert "monitoring" in DECISION_STATUSES
-    assert "mitigating" in DECISION_STATUSES
-    assert "escalated" in DECISION_STATUSES
-    assert "dismissed" in DECISION_STATUSES
+    # ROAM is exactly these four buckets, in canonical order.
+    assert DECISION_STATUSES == ("resolved", "owned", "accepted", "mitigated")
+    # "pending" is engine-authored, so it is not a selectable ROAM bucket.
+    assert PENDING_STATUS not in DECISION_STATUSES
+    # Every pre-ROAM status still resolves to a valid ROAM bucket.
+    for legacy in ("dismissed", "mitigating", "monitoring", "escalated"):
+        assert LEGACY_STATUS_MAP[legacy] in DECISION_STATUSES
+    # No legacy status may survive as a selectable value.
+    assert not set(LEGACY_STATUS_MAP).intersection(DECISION_STATUSES)
