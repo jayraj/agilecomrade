@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, ClipboardPlus } from 'lucide-react'
 import {
   describeAiFallback,
   riskTitle,
@@ -16,6 +16,8 @@ interface RiskCardItemProps {
   endDate?: string
   hideSignal?: boolean
   showDraft?: boolean
+  /** Shows the "Add to Risk Register" hand-off. Gated off for future sprints. */
+  showRegister?: boolean
   drafting?: boolean
   onDraft?: () => void
   draft?: string
@@ -72,6 +74,7 @@ export default function RiskCardItem({
   endDate,
   hideSignal,
   showDraft,
+  showRegister,
   drafting,
   onDraft,
   draft,
@@ -116,6 +119,11 @@ export default function RiskCardItem({
   const saveNote = (): void => {
     if (status === 'pending' || !onDecide) return
     void onDecide(status, note)
+  }
+
+  // Placeholder until the risk-register write lands (Excel export or in-app).
+  const handleAddToRegister = (): void => {
+    alert('This feature is coming soon!')
   }
 
   return (
@@ -226,6 +234,16 @@ export default function RiskCardItem({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {showRegister && (
+        <div className="risk-register-action">
+          <div className={TRANSPARENCY_LABEL}>Risk register</div>
+          <button type="button" className="register-btn" onClick={handleAddToRegister}>
+            <ClipboardPlus size={16} />
+            Add to Risk Register
+          </button>
         </div>
       )}
 
