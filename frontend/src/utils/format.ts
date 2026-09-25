@@ -12,53 +12,25 @@ export const setJiraTimezone = (tz: string | null | undefined): void => {
   displayTimezone = tz || null
 }
 
+const RISK_BANDS = [
+  { sev: 'CRITICAL', band: '(80+)', min: 80, color: '#ef4444' },
+  { sev: 'HIGH', band: '(60-79)', min: 60, color: '#d97706' },
+  { sev: 'MEDIUM', band: '(20-59)', min: 20, color: '#f59e0b' },
+  { sev: 'LOW', band: '(<20)', min: 0, color: '#10b981' },
+] as const
+
+const bandForScore = (score: number): (typeof RISK_BANDS)[number] =>
+  RISK_BANDS.find((b) => score >= b.min) ?? RISK_BANDS[RISK_BANDS.length - 1]
+
 export const getRiskColor = (score: number | undefined | null): string => {
   if (score === undefined || score === null) return '#a1a1aa'
-  if (score >= 80) return '#ef4444'
-  if (score >= 60) return '#d97706'
-  if (score >= 20) return '#f59e0b'
-  return '#10b981'
-}
-
-// Score-band chips for score-math transparency. Mirrors backend/risk_explainer.py
-// `_SEVERITY_BANDS` band labels so the chip label matches what the explainer
-// attached (e.g. "CRITICAL (80+)").
-export const riskScoreBandFromScore = (score?: number | null): string | null => {
-  if (score === undefined || score === null) return null
-  const sev = severityFromScore(score)
-  if (!sev) return null
-  const band =
-    sev === 'CRITICAL' ? '(80+)' : sev === 'HIGH' ? '(60-79)' : sev === 'MEDIUM' ? '(20-59)' : '(<20)'
-  return `${sev} ${band}`
+  return bandForScore(score).color
 }
 
 // Per-driver score-math chips. Reads the structured `factors` block the backend
 // attaches to each risk (band = score-band chips; drivers = the exact multipliers
 // that went into the risk's raw score). Returns [] when the block is absent so
 // callers fall back to the severity_reason text chip instead of breaking.
-// Always-on band/driver legend for score-math transparency. Mirrors
-// backend/risk_explainer.py band labels + the severity bands so the legend chip
-// label matches what the backend explainer attaches ("CRITICAL (80+)" etc.).
-export const riskScoreBandChips = (): { icon?: string; label: string }[] => [
-  { label: 'CRITICAL (80+)' },
-  { label: 'HIGH (60-79)' },
-  { label: 'MEDIUM (20-59)' },
-  { label: 'LOW (<20)' },
-]
-
-export const riskScoreLegend = (): { icon?: string; label: string }[] => [
-  ...riskScoreBandChips(),
-  { icon: '🧱', label: 'stage ×N' },
-  { icon: '🙋', label: 'assignee ×N' },
-  { icon: '⚖️', label: 'size ×N' },
-  { icon: '🔀', label: 'fan-out ×N' },
-  { icon: '🔗', label: 'deps ×N' },
-]
-
-// Band chips are plain strings (backend/risk_explainer.py `attach_factors`
-// latches `band: string[]` — each element is already the full "SEVERITY (range)
-// (raw X → score Y)" band label, e.g. "HIGH (60-79) (raw 72.0 → score 67.5)");
-// drivers are `{icon,label}[]` chip objects. Read exactly those shapes.
 export const scoreDrivers = (risk: {
   factors?: {
     band?: string[]
@@ -72,26 +44,12 @@ export const scoreDrivers = (risk: {
   return [...band, ...drivers].filter((c) => c.label)
 }
 
-// Always-on score-band legend chips (persistent transparency — independent of any
-// specific risk's `factors` block). Band labels + dots mirror the backend's
-// bucket_severity severity bands (backend/risk_components.py:bucket_severity)
-// so the legend always matches the score math regardless of payload shape.
-export const RISK_SCORE_LEGEND: { sev: string; band: string; range: string; color: string }[] = [
-  { sev: 'CRITICAL', band: '(80+)', range: '≥ 80', color: '#ef4444' },
-  { sev: 'HIGH', band: '(60-79)', range: '60–79', color: '#d97706' },
-  { sev: 'MEDIUM', band: '(20-59)', range: '20–59', color: '#f59e0b' },
-  { sev: 'LOW', band: '(<20)', range: '< 20', color: '#10b981' },
-]
-
 // Must mirror backend/risk_components.py:bucket_severity bands so frontend
 // display severity matches the recalibrated backend (LOW<20, MEDIUM 20-59,
 // HIGH 60-79, CRITICAL 80+).
 export const severityFromScore = (score?: number | null): string | null => {
   if (score === undefined || score === null) return null
-  if (score >= 80) return 'CRITICAL'
-  if (score >= 60) return 'HIGH'
-  if (score >= 20) return 'MEDIUM'
-  return 'LOW'
+  return bandForScore(score).sev
 }
 
 export interface RiskDetectFields {

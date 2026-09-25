@@ -2574,3 +2574,158 @@ body {
     flex: 1 1 100%;
   }
 }
+
+/* Risk score matrix: Probability × Impact reference scale (1–25), collapsible.
+   Cell colors reuse the shared per-severity badge tokens so the matrix and the
+   risk cards always read from one severity palette. */
+.risk-matrix {
+  margin: 0 0 var(--spacing-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+.risk-matrix-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-neutral-700);
+}
+.risk-matrix-toggle:hover {
+  background: var(--color-neutral-100);
+}
+.risk-matrix-toggle:focus-visible {
+  outline: 2px solid var(--color-primary-300);
+  outline-offset: -2px;
+}
+.risk-matrix-chevron {
+  transition: transform 0.15s ease;
+  color: var(--color-neutral-500);
+}
+.risk-matrix-chevron.open {
+  transform: rotate(90deg);
+}
+.risk-matrix-toggle-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-secondary-800);
+}
+.risk-matrix-toggle-hint {
+  font-size: 12px;
+  color: var(--color-neutral-500);
+}
+.risk-matrix-body {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+.risk-matrix-caption {
+  margin: 0 0 var(--spacing-sm);
+  font-size: 12px;
+  color: var(--color-neutral-500);
+}
+.risk-matrix-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-x: auto;
+}
+.risk-matrix-corner,
+.risk-matrix-row {
+  display: grid;
+  grid-template-columns: 110px repeat(5, minmax(64px, 1fr));
+  gap: 2px;
+  align-items: stretch;
+}
+.risk-matrix-corner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+}
+.risk-matrix-axis {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500);
+}
+.risk-matrix-col-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--spacing-xs) 2px;
+  text-align: center;
+}
+.risk-matrix-col-score {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+}
+.risk-matrix-col-label,
+.risk-matrix-row-label {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+}
+.risk-matrix-row-head {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs) 0;
+  text-align: right;
+}
+.risk-matrix-row-label {
+  font-weight: 600;
+  color: var(--color-neutral-700);
+}
+.risk-matrix-row-odds {
+  font-size: 10px;
+  color: var(--color-neutral-500);
+}
+.risk-matrix-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-height: 34px;
+  padding: var(--spacing-xs) 2px;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.risk-matrix-cell-value {
+  font-size: 12px;
+  font-weight: 600;
+}
+.risk-matrix-cell-band {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.risk-matrix-cell.low {
+  background: var(--badge-low-bg);
+  border-color: var(--badge-low-border);
+  color: var(--badge-low-text);
+}
+.risk-matrix-cell.medium {
+  background: var(--badge-medium-bg);
+  border-color: var(--badge-medium-border);
+  color: var(--badge-medium-text);
+}
+.risk-matrix-cell.high {
+  background: var(--badge-high-bg);
+  border-color: var(--badge-high-border);
+  color: var(--badge-high-text);
+}
+.risk-matrix-cell.critical {
+  background: var(--badge-critical-bg);
+  border-color: var(--badge-critical-border);
+  color: var(--badge-critical-text);
+}

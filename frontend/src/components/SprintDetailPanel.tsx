@@ -35,6 +35,7 @@ import {
 } from '../utils/format'
 import SprintGauge from './SprintGauge'
 import RiskCardItem from './RiskCardItem'
+import RiskDetailMatrix from './RiskDetailMatrix'
 import WorkItemTable from './WorkItemTable'
 
 export interface SprintDetailPanelProps {
@@ -294,6 +295,8 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
             </div>
           ))}
         </div>
+
+        <RiskDetailMatrix />
 
         {sprintBlockers.length > 0 && (
           <section className="detail-section">
