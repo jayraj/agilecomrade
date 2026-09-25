@@ -20,6 +20,7 @@ import {
   SHOW_AI_DEBUG,
   type Blocker,
   type Mitigation,
+  type NextSprintAnalysis,
   type NextSprintIssue,
   type NextSprintProject,
   type RiskDecision,
@@ -64,6 +65,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
 
   const [futureIssues, setFutureIssues] = useState<NextSprintIssue[]>([])
   const [futureRisks, setFutureRisks] = useState<Blocker[] | null>(null)
+  const [futureAnalysis, setFutureAnalysis] = useState<NextSprintAnalysis | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
 
   const [localDecisions, setLocalDecisions] = useState<Record<string, RiskDecision>>({})
@@ -144,11 +146,13 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     setAnalyzing(true)
     try {
       const response = await apiNextSprintRisks(project.project_key)
+      setFutureAnalysis(response)
       setFutureRisks(
         (response.risks || []).sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0)),
       )
     } catch (e) {
       console.error('Error analyzing next sprint risks:', e)
+      setFutureAnalysis(null)
       setFutureRisks([])
     } finally {
       setAnalyzing(false)
@@ -339,6 +343,26 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
               })}
             </div>
           </section>
+        )}
+
+        {isFuture && SHOW_AI_DEBUG && futureAnalysis && (
+          <details className="prompt-details" open>
+            <summary>🔍 View AI Prompt &amp; Raw Response</summary>
+            <div className="ai-info-line">
+              <span>
+                🤖 LLM: {futureAnalysis.llm?.provider ?? '?'} · {futureAnalysis.llm?.model ?? '?'}
+              </span>
+              <span className={`ai-used ${futureAnalysis.ai_used ? 'yes' : 'no'}`}>
+                {futureAnalysis.ai_used ? 'AI used' : 'Rule-based fallback'}
+              </span>
+            </div>
+            <div className="prompt-block">
+              <div className="prompt-label">Prompt sent to model:</div>
+              <pre>{futureAnalysis.prompt || '—'}</pre>
+              <div className="prompt-label">Model response:</div>
+              <pre>{futureAnalysis.raw_response || '⚠️ AI unavailable — used rule-based fallback (reason logged to the browser console).'}</pre>
+            </div>
+          </details>
         )}
 
         <button

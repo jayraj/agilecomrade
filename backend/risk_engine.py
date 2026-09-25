@@ -24,11 +24,13 @@ def _resolve_tz(jira_timezone: str | None):
             pass
     return timezone.utc
 from risk_components import (
+    DEPENDENCY_PHRASES,
     STALE_HOURS,
     assignee_factor,
     avg_sprint_sp,
     bucket_severity,
     days_remaining,
+    has_dependency_signal,
     hours_since,
     is_blocking_map,
     is_done,
@@ -48,6 +50,8 @@ from risk_matrix import (
     due_date_p,
     external_dep_i,
     external_dep_p,
+    overload_i,
+    overload_p,
     qa_i,
     qa_p,
     scope_creep_i,
@@ -66,7 +70,11 @@ logger = logging.getLogger(__name__)
 
 EXTERNAL_KEYWORDS = ["vendor", "third-party", "third party", "procurement", "external", "credentials"]
 INTERNAL_KEYWORDS = ["another team", "other team", "internal", "platform team", "another squad", "squad"]
-TRIGGER_KEYWORDS = ["blocked by", "depends on", "waiting for", "external", "vendor", "third-party"]
+
+# Severity ordinals + score windows, used to align an aggregate to the worst
+# finding actually present. Windows mirror bucket_severity's bands.
+_SEVERITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+_SEVERITY_BAND = {"LOW": (0, 19), "MEDIUM": (20, 59), "HIGH": (60, 79), "CRITICAL": (80, 100)}
 
 
 class RiskEngine:
@@ -449,10 +457,10 @@ class RiskEngine:
         blocking_map = context.get("blocking_map", {})
 
         for issue in issues:
-            description = (issue.get("description") or "").lower()
-            if not any(k in description for k in TRIGGER_KEYWORDS):
-                continue
             if is_done(issue.get("status")):
+                continue
+            description = (issue.get("description") or "").lower()
+            if not has_dependency_signal(issue):
                 continue
 
             if any(k in description for k in EXTERNAL_KEYWORDS):
@@ -461,6 +469,24 @@ class RiskEngine:
                 dep_kind = "internal"
             else:
                 dep_kind = "default"
+
+            blocked_by = issue.get("blocked_by")
+            if isinstance(blocked_by, str):
+                blocker_refs = [blocked_by.strip()] if blocked_by.strip() else []
+            elif isinstance(blocked_by, (list, tuple)):
+                blocker_refs = [str(b).strip() for b in blocked_by if str(b).strip()]
+            else:
+                blocker_refs = []
+            if blocker_refs:
+                trigger = f"blocked_by={blocker_refs!r}"
+                detail = ", ".join(blocker_refs)
+            else:
+                phrase = next((p for p in DEPENDENCY_PHRASES if p in description), None)
+                trigger = f"description phrase {phrase!r}" if phrase else "description phrase"
+                detail = f"description mentions {phrase!r}" if phrase else "external dependency mentioned in description"
+            logger.info(
+                f"🔗 external-dep | key={issue['key']} | kind={dep_kind} | trigger={trigger}"
+            )
 
             blocks_others = issue.get("key") in blocking_map
             probability = external_dep_p(dep_kind)
@@ -477,7 +503,7 @@ class RiskEngine:
                 impact=impact,
                 issue_key=issue["key"],
                 summary=issue.get("summary"),
-                dependency_detail=issue.get("blocked_by", "External dependency mentioned in description"),
+                dependency_detail=detail,
                 dependency_kind=dep_kind,
                 fan_out=settings.fan_out_factor if blocks_others else 1.0,
             ))
@@ -826,6 +852,75 @@ class RiskEngine:
         return risks
 
     # ------------------------------------------------------------------ #
+    # OVERLOADED (assignee-level, upcoming-sprint capacity concentration)
+    # ------------------------------------------------------------------ #
+    def detect_overload(self, issues, context=None):
+        """Flag assignees carrying a disproportionate share of the planned work.
+
+        Capacity is inherently relative: a small team where everyone holds two
+        tickets is balanced, not overloaded. We therefore compare each assignee's
+        open-item count against the team average and require BOTH an absolute
+        floor (`overload_min_items`) and a relative ratio (`overload_ratio`), so
+        neither a tiny nor a balanced team ever fires. Unassigned work is skipped
+        because UNASSIGNED already covers it, and fewer than two assignees gives
+        no baseline to compare against.
+
+        Severity is two-dimensional: probability from how far above the average
+        the load sits, impact from how much total SP is stranded on that person.
+        """
+        risks = []
+        if not issues:
+            return risks
+
+        by_assignee: dict[str, list] = {}
+        for issue in issues:
+            if is_done(issue.get("status")):
+                continue
+            assignee = (issue.get("assignee") or "").strip()
+            if not assignee or assignee.lower() in ("unassigned", "none", "n/a", "-"):
+                continue
+            by_assignee.setdefault(assignee, []).append(issue)
+
+        if len(by_assignee) < 2:
+            return risks
+
+        average = sum(len(v) for v in by_assignee.values()) / len(by_assignee)
+        if average <= 0:
+            return risks
+
+        for assignee, owned in sorted(by_assignee.items(), key=lambda kv: len(kv[1]), reverse=True):
+            count = len(owned)
+            if count < settings.overload_min_items:
+                continue
+            ratio = count / average
+            if ratio < settings.overload_ratio:
+                continue
+
+            total_sp = sum(i.get("story_points") or 0 for i in owned)
+            issue_keys = [i.get("key") for i in owned]
+            risks.append(self._emit(
+                "OVERLOADED",
+                75,
+                (
+                    f"Reassign at least one ticket from {assignee} to balance the workload "
+                    f"across the team before the sprint starts."
+                ),
+                overload_p(ratio),
+                overload_i(total_sp),
+                assignee=assignee,
+                issue_keys=issue_keys,
+                count=count,
+                total_sp=total_sp,
+                team_average=float(round(average, 2)),
+                load_ratio=float(round(ratio, 2)),
+            ))
+            logger.info(
+                f"💪 overload | assignee={assignee} | items={count} | avg={average:.2f} "
+                f"| ratio={ratio:.2f} | sp={total_sp}"
+            )
+        return risks
+
+    # ------------------------------------------------------------------ #
     # Next-sprint (pre-planning) — v1 formulas, out of v2 rubric scope
     # ------------------------------------------------------------------ #
     def calculate_next_sprint_risks(self, issues):
@@ -899,19 +994,37 @@ class RiskEngine:
         due_risks = self.detect_due_date_risks(None, issues)
         risks.extend(due_risks)
 
+        risks.extend(self.detect_overload(issues))
+
         return sorted(risks, key=lambda x: x.get("risk_score", 0), reverse=True)
 
     # ------------------------------------------------------------------ #
     # Aggregation helpers
     # ------------------------------------------------------------------ #
     def aggregate_risk_score(self, risks):
-        scores = sorted([r.get("risk_score", 0) for r in risks], reverse=True)
+        """Blend per-risk scores into one 0..100 score whose band equals the
+        worst severity actually present.
+
+        Blending raw scores lets a pile of individually-moderate risks push the
+        total across a higher severity boundary (e.g. 60+40 blends to 68/HIGH
+        though neither member is HIGH). We keep the blend for relative magnitude
+        but clamp it into the worst member's band, so the card gauge, the RAG
+        band and the risk badge can never claim a severity no finding supports.
+        """
+        risks = [r for r in risks if isinstance(r, dict)]
+        scores = [r.get("risk_score") for r in risks if isinstance(r.get("risk_score"), (int, float))]
         if not scores:
             return 0
-        score = scores[0]
-        for s in scores[1:]:
-            score += s * 0.2
-        return min(100, int(round(score)))
+        scores.sort(reverse=True)
+        blended = scores[0] + sum(s * 0.2 for s in scores[1:])
+
+        worst = max(
+            (bucket_severity(r.get("risk_score", 0)) for r in risks),
+            key=_SEVERITY_ORDER.__getitem__,
+            default="LOW",
+        )
+        lo, hi = _SEVERITY_BAND[worst]
+        return max(lo, min(hi, int(round(blended))))
 
     def generate_risk_summary(self, risks):
         high_risks = [r for r in risks if r["severity"] in ("CRITICAL", "HIGH")]

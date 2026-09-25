@@ -153,6 +153,33 @@ def is_blocking_map(issues):
     return blocking
 
 
+# A ticket counts as a dependency risk only when it carries a real dependency
+# signal: a structured `blocked_by` link OR explicit blocking language in the
+# description. A bare party noun ("external tools", "vendor API") is context,
+# not a blocker, so it classifies a dependency but never creates one.
+DEPENDENCY_PHRASES = (
+    "blocked by", "blocked on", "blocked until",
+    "waiting for", "wait for", "waiting on", "awaiting",
+    "depends on", "dependent on",
+    "rely on", "relies on", "relying on",
+    "pending from", "pending on",
+    "on hold", "stuck on",
+)
+
+
+def has_dependency_signal(issue):
+    """True when the issue is genuinely blocked on another party.
+
+    A `blocked_by` link is authoritative. Failing that, the description must
+    contain explicit blocking language ("waiting for ...", "blocked by ...");
+    a descriptive mention of a party ("export to external tools") is not one.
+    """
+    if issue.get("blocked_by"):
+        return True
+    description = (issue.get("description") or "").lower()
+    return any(p in description for p in DEPENDENCY_PHRASES)
+
+
 def bucket_severity(score):
     """Severity buckets: 0-19 LOW, 20-59 MEDIUM, 60-79 HIGH, 80+ CRITICAL."""
     if score >= 80:

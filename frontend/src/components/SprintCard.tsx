@@ -46,7 +46,9 @@ export default function SprintCard({ data, blockers = [], eyebrow = 'ACTIVE SPRI
   const healthPct =
     isAtRisk && totalIssues > 0 ? Math.round((readiness / totalIssues) * 100) : pointsPct
   const progressPct = isAtRisk ? healthPct : pointsPct
-  const fillColor = isAtRisk ? getRiskColor(100 - healthPct) : null
+  // The readiness bar is colored from the same risk score as the gauge, so the
+  // two indicators can never contradict (e.g. a 70% risk gauge beside a green bar).
+  const fillColor = isAtRisk ? getRiskColor(score) : null
 
   const sevOf = (b: Blocker) => severityFromScore(b.risk_score) || b.severity || 'MEDIUM'
   const counts = {

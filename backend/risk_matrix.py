@@ -181,6 +181,24 @@ def sprint_ended_i(remaining_sp, total_sp):
 
 
 # --------------------------------------------------------------------------- #
+# Assignee capacity ladders: "is one person carrying the sprint?"
+# --------------------------------------------------------------------------- #
+
+def overload_p(ratio):
+    """How concentrated is one person's load relative to the team average?
+
+    Uses a down-ladder so each step is a floor: >=1.5x is MEDIUM-leaning (P3),
+    >=2x is HIGH-leaning (P4), >=3x is CRITICAL-leaning (P5).
+    """
+    return _ladder_down(ratio, ((3.0, 5), (2.0, 4), (1.5, 3)), 3)
+
+
+def overload_i(total_sp):
+    """How much work is stranded on that person if the load does not spread?"""
+    return _ladder_up(total_sp, ((6, 2), (12, 3), (24, 4)), 5)
+
+
+# --------------------------------------------------------------------------- #
 # Ticket-level ladders
 # --------------------------------------------------------------------------- #
 

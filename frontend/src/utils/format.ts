@@ -84,6 +84,7 @@ export const RISK_TYPE_META: Record<string, { label: string }> = {
   UNESTIMATED: { label: '📐 Unestimated' },
   UNDEFINED_SCOPE: { label: '📝 Undefined Scope' },
   SIZING_RISK: { label: '🏗️ Oversized' },
+  OVERLOADED: { label: '🔥 Overloaded' },
   DUE_DATE_PASSED: { label: '⏰ Due Date Passed' },
   BUG_RAISED: { label: '🐛 Bug Raised' },
   SCOPE_CREEP: { label: '📈 Scope Creep' },

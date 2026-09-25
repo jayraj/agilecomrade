@@ -12,6 +12,7 @@ from config import settings as _settings
 from risk_components import (
     STALE_HOURS,
     avg_sprint_sp,
+    bucket_severity,
     is_blocking_map,
     time_pressure_multiplier,
 )
@@ -84,6 +85,85 @@ def run():
     # band-aligned for all 25 products, so bucket_severity(project) always
     # equals the matrix band. If this ever drifts, severities disagree.
     assert_projection_is_band_aligned()
+
+    # Hard invariant (not a counted check): a ticket must only be flagged as an
+    # external dependency when it carries a real dependency signal (a blocked_by
+    # link or explicit blocking language). A bare party noun like "external tools"
+    # (e.g. a CSV/PDF export story) is context, not a blocker, and must not fire.
+    benign = [
+        _issue("BENIGN-1", "To Do", 3, 6)
+        | {
+            "description": (
+                "As a user, I want to export my expense data as CSV and PDF so that I can "
+                "share, archive, or analyze my financial records in external tools."
+            )
+        },
+    ]
+    benign_risks = eng.detect_external_dependencies(benign)
+    assert not any(r.get("type") == "EXTERNAL_DEPENDENCY" for r in benign_risks), (
+        "external dependency false positive: 'external tools' description must not trigger a risk"
+    )
+
+    # A real blocking phrase (or a blocked_by link) must still fire and classify.
+    real = [
+        _issue("REAL-1", "To Do", 5, 6)
+        | {"description": "Blocked: waiting for vendor credentials from external vendor"},
+    ]
+    real_risks = eng.detect_external_dependencies(real)
+    assert any(r.get("type") == "EXTERNAL_DEPENDENCY" for r in real_risks), (
+        "external dependency regression: real blocking language must still trigger a risk"
+    )
+
+    # Hard invariant (not a counted check): assignee overload is relative, so a
+    # small but evenly-distributed team must never be flagged. Both an absolute
+    # floor and a ratio-against-the-team-average are required to fire.
+    balanced = [
+        _issue("BAL-1", "To Do", 2, 2, assignee="dev-01"),
+        _issue("BAL-2", "To Do", 2, 2, assignee="dev-02"),
+        _issue("BAL-3", "To Do", 2, 2, assignee="dev-03"),
+        _issue("BAL-4", "To Do", 2, 2, assignee="dev-03"),
+    ]
+    assert not eng.detect_overload(balanced), (
+        "overload false positive: an evenly distributed team must not be flagged"
+    )
+
+    # A single assignee gives no team average to compare against, so it cannot fire.
+    solo = [_issue(f"SOLO-{n}", "To Do", 3, 2, assignee="dev-01") for n in range(1, 6)]
+    assert not eng.detect_overload(solo), (
+        "overload false positive: a lone assignee has no baseline to compare against"
+    )
+
+    # A genuinely concentrated load must still fire and carry the matrix payload.
+    skewed = [
+        _issue("OVR-1", "To Do", 3, 2, assignee="dev-03"),
+        _issue("OVR-2", "To Do", 3, 2, assignee="dev-03"),
+        _issue("OVR-3", "To Do", 2, 2, assignee="dev-03"),
+        _issue("OVR-4", "To Do", 3, 2, assignee="dev-01"),
+        _issue("OVR-5", "To Do", 3, 2, assignee="dev-02"),
+    ]
+    overload_risks = eng.detect_overload(skewed)
+    assert len(overload_risks) == 1, f"overload regression: expected 1 finding, got {overload_risks}"
+    overload = overload_risks[0]
+    assert overload["assignee"] == "dev-03", f"wrong assignee flagged: {overload['assignee']}"
+    assert overload["count"] == 3, f"wrong count: {overload['count']}"
+    assert bucket_severity(overload["risk_score"]) == overload["severity"], (
+        f"overload band drift: {overload['risk_score']} -> {overload['severity']}"
+    )
+    assert overload["probability"] and overload["impact"], "overload must carry its (P, I) pair"
+
+    # Hard invariant (not a counted check): the aggregate score must never claim a
+    # severity band higher than the worst individual finding, so the card gauge and
+    # the RAG band agree with the risks actually detected.
+    agg_high = eng.aggregate_risk_score([
+        {"risk_score": 60, "severity": "HIGH"},
+        {"risk_score": 40, "severity": "MEDIUM"},
+    ])
+    assert bucket_severity(agg_high) == "HIGH", f"aggregate band drift (HIGH): {agg_high}"
+    agg_medium = eng.aggregate_risk_score([
+        {"risk_score": 45, "severity": "MEDIUM"},
+        {"risk_score": 30, "severity": "MEDIUM"},
+    ])
+    assert bucket_severity(agg_medium) == "MEDIUM", f"aggregate band drift (MEDIUM): {agg_medium}"
 
     # ------------------------------------------------------------------ #
     # BURNDOWN_BEHIND

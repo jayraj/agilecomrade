@@ -32,7 +32,6 @@ class JiraFetcher:
         self.base_url = config.jira_cloud_url.rstrip("/")
         self.auth = (config.jira_email, config.jira_api_token)
         self.headers = {"Accept": "application/json"}
-        self.blocked_by_field = settings.jira_field_mapping.get("blocked_by_field")
         self._story_points_field: str | None = None
         self._story_points_resolved = False
 
@@ -326,6 +325,31 @@ class JiraFetcher:
         ac = re.split(r"(?im)^\s*[a-z][a-z ]*:\s*$", ac)[0].strip()
         return ac
 
+    @staticmethod
+    def _blocked_by_keys(fields):
+        """Genuine blocker issue keys from Jira issue links.
+
+        Jira models "blocked by" as an issue link (issuelinks, type "Blocks"),
+        not a custom field. For this issue we collect the keys of the issues
+        that block it. A sprint object, free text, or any non-link value is
+        ignored so a mis-mapped field can never masquerade as a dependency.
+        """
+        keys = []
+        for link in fields.get("issuelinks") or []:
+            link_type = link.get("type") or {}
+            outward_issue = link.get("outwardIssue") or {}
+            # The current issue is the blocked (inward) side exactly when the
+            # link carries an outwardIssue; that outward issue is the blocker.
+            if not outward_issue:
+                continue
+            name = str(link_type.get("name") or "").lower()
+            outward_label = str(link_type.get("outward") or "").lower()
+            if name == "blocks" or outward_label == "blocks" or "blocked by" in name:
+                key = outward_issue.get("key")
+                if key:
+                    keys.append(str(key))
+        return keys
+
     def parse_issue_data(self, issue):
         fields = issue.get("fields", {}) or {}
         resolved = self.resolve_story_points_field()
@@ -361,7 +385,7 @@ class JiraFetcher:
             "acceptance_criteria": self._extract_acceptance_criteria(description),
             "due_date": fields.get("duedate"),
             "labels": fields.get("labels", []),
-            "blocked_by": fields.get(self.blocked_by_field),
+            "blocked_by": self._blocked_by_keys(fields),
             "changelog": issue.get("changelog", {}).get("histories", []),
         }
 

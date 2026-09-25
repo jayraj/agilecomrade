@@ -18,6 +18,7 @@ from prompt_privacy import (
     sanitize_issue_for_prompt,
     scrub_emails,
 )
+from risk_components import has_dependency_signal
 
 # The google-generativeai SDK keeps API-key state process-global
 # (genai.configure); serialize init + calls to avoid cross-profile key races.
@@ -84,6 +85,56 @@ class OpenRouterModel:
         data = response.json()
         content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
         return types.SimpleNamespace(text=content)
+
+
+def filter_false_external_deps(risks, issues):
+    """Drop AI EXTERNAL_DEPENDENCY findings no real ticket actually supports.
+
+    The LLM is good at spotting explicit "blocked"/"waiting" language but prone to
+    reading a descriptive mention ("export to external tools") as a real dependency.
+    Every EXTERNAL_DEPENDENCY key the model returns is therefore re-checked against
+    the real ticket: a `blocked_by` link or an explicit blocking phrase. Unsupported
+    keys are stripped, and the whole risk is removed when none remain. Sprint-wide
+    findings (empty issue_keys) are left untouched — there is nothing to verify.
+    """
+    by_key = {}
+    for i in issues:
+        k = (i.get("key") or "").strip().upper()
+        if k:
+            by_key[k] = i
+
+    kept = []
+    dropped = 0
+    for r in risks:
+        if not isinstance(r, dict) or r.get("type") != "EXTERNAL_DEPENDENCY":
+            kept.append(r)
+            continue
+        keys = r.get("issue_keys") or []
+        if not keys:
+            kept.append(r)
+            continue
+        survivors = []
+        for k in keys:
+            key = str(k).strip().upper()
+            issue = by_key.get(key)
+            if issue is not None and has_dependency_signal(issue):
+                survivors.append(k)
+        if not survivors:
+            dropped += 1
+            continue
+        r = dict(r)
+        r["issue_keys"] = survivors
+        r["count"] = len(survivors)
+        if len(survivors) == 1:
+            r["issue_key"] = survivors[0]
+        kept.append(r)
+
+    if dropped:
+        logger.info(
+            f"AI next-sprint | dropped {dropped} unsupported EXTERNAL_DEPENDENCY "
+            f"finding(s) (no real dependency signal on the cited tickets)"
+        )
+    return kept
 
 
 class MitigationAgent:
@@ -269,6 +320,12 @@ class MitigationAgent:
             logger.error(
                 f"AI mitigation | source=rule-based | provider={self.provider} | sprint={sprint_key} | error={e}"
             )
+            if not risks:
+                owner = "Scrum Master — no risks detected; proactively assess the risks"
+                timeline = "Keep checking (reassess at the next standup)"
+            else:
+                owner = self._fallback_owner(risks) or "Scrum Master"
+                timeline = "ASAP (within 24 hours)"
             return {
                 "sprint_key": sprint_key,
                 "project_key": project_key,
@@ -283,8 +340,8 @@ class MitigationAgent:
                 "fallback_reason": self._fallback_reason(e),
                 "llm": self.get_model_info(),
                 "action_items": [],
-                "owner": self._fallback_owner(risks) or "Scrum Master",
-                "timeline": "ASAP (within 24 hours)",
+                "owner": owner,
+                "timeline": timeline,
                 "success_criteria": [],
                 "details": [{
                     "key": issue.get("key"),
@@ -615,6 +672,9 @@ Write a short, friendly follow-up message (2-4 sentences) to {assignee} asking f
             response = self._generate_with_model(prompt)
             text = restore_aliases(response.text.strip(), prompt_mapping)
             raw_risks = self._extract_risk_list(text)
+            # Re-check every EXTERNAL_DEPENDENCY against the real tickets so the
+            # LLM can't turn a descriptive "external" mention into a blocker.
+            raw_risks = filter_false_external_deps(raw_risks, issues)
 
             info = self.get_model_info()
             if raw_risks:
@@ -669,7 +729,7 @@ Analyze the upcoming sprint for early risks BEFORE planning begins. Consider:
 - Missing story points (sizing / velocity concerns)
 - Undefined scope (missing or thin acceptance_criteria; no description)
 - Acceptance criteria too thin for the estimated size (e.g. 8+ SP with a single short scenario)
-- External dependencies or "blocked by" mentions
+- External dependencies: ONLY flag EXTERNAL_DEPENDENCY when an item is genuinely blocked on or waiting for another party (e.g. "waiting for the vendor", "blocked by the platform team", "depends on their API"). Do NOT flag descriptive mentions of tools/systems the item merely integrates with, exports to, or mentions (e.g. "export to external tools", "integrate with a vendor API", "external archive") unless the item is actually blocked on that party.
 - Assignee overload (one person carrying too many items)
 - Priority conflicts or high-priority items with large estimates
 - Too much work vs. team capacity (velocity)

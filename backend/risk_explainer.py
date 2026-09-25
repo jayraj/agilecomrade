@@ -478,6 +478,37 @@ def _next_sprint_type(risk: dict) -> None:
     )
 
 
+def _overloaded(risk: dict) -> None:
+    c = _conf(risk)
+    keys = _issue_keys(risk)
+    assignee = risk.get("assignee") or "One teammate"
+    count = int(risk.get("count") or len(keys) or 0)
+    ratio = risk.get("load_ratio")
+    ratio_str = f" ({ratio}x the team average)" if ratio else ""
+    risk["signal"] = {
+        "label": f"{assignee} is carrying {count} planned item(s){ratio_str}",
+        "facts": _facts([
+            ("Affected tickets", _chips(keys)),
+            ("Open items for assignee", count),
+            ("Team average", risk.get("team_average")),
+            ("Story points on this assignee", risk.get("total_sp")),
+        ]),
+    }
+    risk["suspected_cause"] = (
+        f"{assignee} holds {count} of the sprint's planned items{ratio_str}, so the "
+        f"work is concentrated on one person instead of spread across the team. "
+        f"Concentrated load like this tends to surface as missed carry-over once "
+        f"the sprint is underway (confidence {c}%)."
+    )
+    risk["suggested_action"] = (
+        risk.get("recommendation") or risk.get("summary") or ""
+    )
+    risk["severity_reason"] = _severity_reason(
+        risk,
+        f"{assignee} carries {count} planned item(s){ratio_str}",
+    )
+
+
 _EXPLAINERS = {
     "STORY_NOT_PROGRESSING": _story_not_progressing,
     "SPRINT_NOT_STARTED": _sprint_not_started,
@@ -492,6 +523,7 @@ _EXPLAINERS = {
     "UNESTIMATED": _next_sprint_type,
     "UNDEFINED_SCOPE": _next_sprint_type,
     "SIZING_RISK": _next_sprint_type,
+    "OVERLOADED": _overloaded,
 }
 
 ALL_EXPLAINED_TYPES = set(_EXPLAINERS)

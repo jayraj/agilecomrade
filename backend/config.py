@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     trend_fast: float = 0.7
     fan_out_factor: float = 1.3
     assignee_no_active_factor: float = 1.4
+    # Assignee overload: flag when one person holds at least this many open
+    # items AND at least `overload_ratio` x the team's average open-item count.
+    # Both gates are required so a small balanced team never fires.
+    overload_min_items: int = 3
+    overload_ratio: float = 1.5
     burndown_history_size: int = 8
     # Scope-creep detection (baseline captured on first active-sprint sync)
     scope_creep_min_growth_pct: float = 10.0
@@ -102,7 +107,6 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 5
     jira_field_mapping: dict[str, str] = {
         "story_points": "customfield_10102",
-        "blocked_by_field": "customfield_10020",
     }
 
     @property
