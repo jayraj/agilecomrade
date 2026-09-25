@@ -40,6 +40,19 @@ from risk_components import (
     trend_factor,
     workflow_stage_weight,
 )
+from risk_matrix import (
+    burndown_i,
+    burndown_p,
+    qa_i,
+    qa_p,
+    scope_creep_i,
+    scope_creep_p,
+    score_from_matrix,
+    sprint_ended_i,
+    sprint_ended_p,
+    sprint_not_started_i,
+    sprint_not_started_p,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,19 +67,23 @@ DEPENDENCY_BASE = {
     "default": settings.dependency_default_base,
 }
 
-# The generic scoring pipeline: every detector computes its own `base` signal
-# (see each detector below) and then a single shared tail turns it into a risk:
+# Risk scoring runs through two tails that share `_emit`:
 #
-#     raw_score = base × ∏(named multipliers)      # uncapped, for triage
-#     risk_score = min(100, round(raw_score))      # capped, for UI/severity
-#     severity = bucket_severity(risk_score)       # <20 / 20-59 / 60-79 / 80+
+#   5x5 matrix (sprint-level detectors, see risk_matrix.py):
+#       matrix_value = P × I                       # 1..25
+#       risk_score = project_matrix(matrix_value)   # band-aligned 0..100
+#       severity = matrix band of (P × I)
+#
+#   legacy product (ticket-level detectors, being migrated in phase 2):
+#       raw_score = base × ∏(named multipliers)     # uncapped, for triage
+#       risk_score = min(100, round(raw_score))
+#       severity = bucket_severity(risk_score)
 #
 # RISK_RECIPES is the single source of truth for WHICH multipliers apply to
-# WHICH risk type (mirrors the docs/risk-engine-scoring-review.md matrix). A
-# detector is built by the generic `_apply_recipe`, which multiplies in each
-# named factor (missing entries default to a neutral 1.0). Risk types that do
-# not use the multiplier model (BUG_RAISED band model, SPRINT_ENDED_INCOMPLETE
-# additive formula, DUE_DATE's max-aggregate) list an empty recipe.
+# WHICH risk type in the legacy product tail. A detector is built by the
+# generic `_apply_recipe`, which multiplies in each named factor (missing
+# entries default to a neutral 1.0). Risk types that do not use the multiplier
+# model (BUG_RAISED band model, DUE_DATE's max-aggregate) list an empty recipe.
 RISK_RECIPES = {
     "STORY_NOT_PROGRESSING": ("stage", "assignee", "size"),
     "SPRINT_NOT_STARTED": ("pressure",),
@@ -153,26 +170,43 @@ class RiskEngine:
             base *= factor if factor is not None else 1.0
         return base
 
-    def _emit(self, risk_type, raw, confidence, recommendation, score_floor=None, **extras):
+    def _emit(self, risk_type, raw, confidence, recommendation, score_floor=None,
+              probability=None, impact=None, **extras):
         """Build the common risk payload for any detector.
 
-        Applies the shared scoring tail exactly once per risk — cap to 100,
-        bucket into a severity — so detectors only supply their uncapped `raw`,
-        confidence, recommendation, and type-specific diagnostics. `score_floor`
-        is an optional minimum displayed score (used by SCOPE_CREEP's product
-        rule, which forces any confirmed creep into CRITICAL).
+        Two scoring tails share this one builder:
+          - 5x5 matrix (probability/impact supplied): score from the P x I block.
+          - legacy product (otherwise): score from the uncapped `raw` product.
+
+        Both cap/bucket exactly once here, and `score_floor` is re-bucketed
+        after it is applied so a floor can only ever raise severity. Detectors
+        only supply their score inputs, confidence, recommendation, and
+        type-specific diagnostics.
         """
-        score = cap_score(raw)
+        matrix = probability is not None and impact is not None
+        if matrix:
+            block = score_from_matrix(probability, impact)
+            score = block["risk_score"]
+            raw = block["raw_score"]
+            severity = block["severity"]
+        else:
+            score = cap_score(raw)
+            severity = bucket_severity(score)
         if score_floor is not None:
             score = max(score, score_floor)
+            severity = bucket_severity(score)
         risk = {
             "type": risk_type,
             "risk_score": score,
             "raw_score": round(raw, 1),
             "confidence": confidence,
-            "severity": bucket_severity(score),
+            "severity": severity,
             "recommendation": recommendation,
         }
+        if matrix:
+            risk["probability"] = block["probability"]
+            risk["impact"] = block["impact"]
+            risk["matrix_value"] = block["matrix_value"]
         risk.update(extras)
         return risk
 
@@ -246,6 +280,8 @@ class RiskEngine:
         days_elapsed = (now - start).days
         if days_elapsed < settings.no_progress_grace_days:
             return []
+        duration = (end - start).days
+        elapsed_fraction = (days_elapsed / duration) if duration > 0 else 1.0
 
         open_issues = [i for i in issues if not is_done(i.get("status"))]
         if not open_issues:
@@ -259,21 +295,19 @@ class RiskEngine:
         if started:
             return []  # at least one ticket has moved out of the start column
 
-        base = min(settings.no_progress_cap, days_elapsed * settings.no_progress_per_day)
-        raw = self._apply_recipe(
-            base,
-            RISK_RECIPES["SPRINT_NOT_STARTED"],
-            {"pressure": time_pressure_multiplier(sprint)},
-        )
+        probability = sprint_not_started_p(elapsed_fraction)
+        impact = sprint_not_started_i(len(open_issues))
 
         return [self._emit(
             "SPRINT_NOT_STARTED",
-            raw, 90,
+            None, 90,
             (
                 f"Sprint '{sprint.get('name')}' started {days_elapsed}d ago but "
                 f"0 of {len(open_issues)} tickets are In Progress (all To Do). "
                 f"Confirm work has kicked off or re-plan scope."
             ),
+            probability=probability,
+            impact=impact,
             sprint_key=sprint.get("name"),
             summary=sprint.get("name"),
             days_elapsed=days_elapsed,
@@ -369,24 +403,27 @@ class RiskEngine:
         if burndown_gap <= settings.burndown_behind_threshold:
             return risks
 
-        # v2: trend + time pressure composition
-        base = min(settings.burndown_gap_cap, burndown_gap)
-        raw = self._apply_recipe(
-            base,
-            RISK_RECIPES["BURNDOWN_BEHIND"],
-            {
-                "trend": trend_factor(context.get("burndown_history") or []),
-                "pressure": time_pressure_multiplier(sprint),
-            },
+        # v3 5x5 matrix: probability = can the gap still close in time (nudged by
+        # the gap trend); impact = how far behind the ideal burn line we are.
+        days_left_fraction = (
+            data["days_remaining"] / data["sprint_duration"]
+            if data.get("sprint_duration") else 0.0
         )
+        probability = burndown_p(
+            days_left_fraction,
+            trend_factor(context.get("burndown_history") or []),
+        )
+        impact = burndown_i(burndown_gap)
 
         risks.append(self._emit(
             "BURNDOWN_BEHIND",
-            raw, 90,
+            None, 90,
             (
                 f"Burndown {burndown_gap:.1f}% behind. Need to complete "
                 f"{data['remaining_sp']:.0f} SP in {data['days_remaining']} days."
             ),
+            probability=probability,
+            impact=impact,
             sprint_key=sprint.get("name"),
             issue_keys=[i.get("key") for i in issues if not is_done(i.get("status"))],
             total_sp=data["total_sp"],
@@ -426,20 +463,21 @@ class RiskEngine:
         qa_queue_count = len(qa_stories)
         backlog_clear_days = qa_queue_count / throughput if throughput > 0 else qa_queue_count
         days_left = days_remaining(sprint)
-        base = min(settings.qa_backlog_cap, (backlog_clear_days / days_left) * 100)
-        raw = self._apply_recipe(
-            base,
-            RISK_RECIPES["QA_BOTTLENECK"],
-            {"pressure": time_pressure_multiplier(sprint)},
-        )
+        # v3 5x5 matrix: probability = can QA clear the queue in the time left;
+        # impact = queue size, nudged up when stories are already stuck.
+        clear_ratio = (backlog_clear_days / days_left) if days_left > 0 else float(qa_queue_count)
+        probability = qa_p(clear_ratio)
+        impact = qa_i(qa_queue_count, len(stuck_stories))
 
         risks.append(self._emit(
             "QA_BOTTLENECK",
-            raw, 80,
+            None, 80,
             (
                 f"{qa_queue_count} stories in QA Review. Consider adding QA "
                 f"resource or running parallel testing."
             ),
+            probability=probability,
+            impact=impact,
             sprint_key=sprint.get("name") if sprint else None,
             issue_keys=[s.get("key") for s in qa_stories],
             qa_stories_count=qa_queue_count,
@@ -719,14 +757,10 @@ class RiskEngine:
         if growth < min_growth and not added and not hiked:
             return risks
 
-        # Pure additions/hikes with sub-threshold net growth still count as
-        # at least a threshold-level signal.
-        base = max(growth, min_growth) if (added or hiked) else growth
-        raw = self._apply_recipe(
-            min(settings.scope_creep_cap, base),
-            RISK_RECIPES["SCOPE_CREEP"],
-            {"pressure": time_pressure_multiplier(sprint)},
-        )
+        # v3 5x5 matrix: creep has already happened (P=5); impact from growth
+        # magnitude, floored at Moderate when work was added or re-estimated.
+        probability = scope_creep_p()
+        impact = scope_creep_i(growth, added or hiked)
         confidence = 60 if baseline.get("late_capture") else 75
 
         parts = [f"Sprint scope grew {growth:.0f}% since planning ({baseline_sp:.0f} → {current_sp} SP)."]
@@ -745,11 +779,13 @@ class RiskEngine:
 
         risks.append(self._emit(
             "SCOPE_CREEP",
-            raw, confidence,
+            None, confidence,
             " ".join(parts),
             # Unplanned work absorbed mid-sprint is always a red flag, even +1 SP:
             # floor the displayed score so severity lands in CRITICAL.
             score_floor=settings.scope_creep_floor_score,
+            probability=probability,
+            impact=impact,
             sprint_key=name,
             issue_keys=[a["key"] for a in added] + [h["key"] for h in hiked],
             baseline_sp=baseline_sp,
@@ -801,8 +837,6 @@ class RiskEngine:
         days_overdue = max(1, (now.astimezone(tz).date() - end.astimezone(tz).date()).days)
 
         if remaining_sp > 0:
-            # Worse the longer it's overdue and the more work is unfinished.
-            raw = min(100.0, 60 + days_overdue * 4 + min(remaining_sp, 20) * 1.5)
             recommendation = (
                 f"Sprint ended {days_overdue} day(s) ago but {remaining_sp:.0f} SP remain "
                 f"incomplete and it is still open in Jira. Close it out or move the "
@@ -810,16 +844,21 @@ class RiskEngine:
             )
         else:
             # All work is Done in Jira, but the sprint was never closed.
-            raw = min(80.0, 40 + days_overdue * 3)
             recommendation = (
                 f"Sprint ended {days_overdue} day(s) ago but is still open ('active') in "
                 f"Jira even though all {total_sp:.0f} SP are Done. Close the sprint to "
                 f"keep reporting clean."
             )
+        # v3 5x5 matrix: the sprint has already ended, so the risk has
+        # materialised (P=5); impact is the share of the sprint left unfinished.
+        probability = sprint_ended_p()
+        impact = sprint_ended_i(remaining_sp, total_sp)
         risks.append(self._emit(
             "SPRINT_ENDED_INCOMPLETE",
-            raw, 90,
+            None, 90,
             recommendation,
+            probability=probability,
+            impact=impact,
             sprint_key=sprint.get("name"),
             issue_keys=[i.get("key") for i in issues if not is_done(i.get("status"))],
             total_sp=total_sp,

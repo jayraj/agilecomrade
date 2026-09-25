@@ -16,6 +16,7 @@ from risk_components import (
     time_pressure_multiplier,
 )
 from risk_engine import RiskEngine
+from risk_matrix import assert_projection_is_band_aligned
 
 eng = RiskEngine()
 
@@ -78,6 +79,11 @@ def _first(risks, label):
 
 def run():
     results = []
+
+    # Hard invariant (not a counted check): the 5x5 matrix projection must stay
+    # band-aligned for all 25 products, so bucket_severity(project) always
+    # equals the matrix band. If this ever drifts, severities disagree.
+    assert_projection_is_band_aligned()
 
     # ------------------------------------------------------------------ #
     # BURNDOWN_BEHIND
@@ -213,8 +219,9 @@ def run():
     # QA_BOTTLENECK
     # ------------------------------------------------------------------ #
     print("\nQA_BOTTLENECK")
-    # Example: 2 in QA, throughput 1/day -> backlog 2; 3 days remain (day2/5, mult 0.8)
-    # base=min(70, 200/3)=67 -> 67*0.8 = 53.6 -> 54 MEDIUM
+    # Example: 2 in QA (both >24h stale), throughput 1/day -> clear 2d; 3 days left.
+    # P: clear_ratio=2/3 -> Unlikely(2). I: queue 2 -> Minor(2), +1 stuck -> 3.
+    # matrix=2x3=6 -> MEDIUM -> project(6)=30
     sprint_q = _sprint(days_elapsed=2, duration=5)
     issues_q = [
         _issue("Q-1", "In QA Review", 3, 30),
@@ -223,14 +230,15 @@ def run():
     ctx_q = {"qa_throughput": 1.0}
     risks_q = eng.detect_qa_bottleneck(sprint_q, issues_q, ctx_q)
     r = risks_q[0]
-    results.append(check("Example: 2 QA, throughput 1/day, 3 days left", r["risk_score"], 54))
+    results.append(check("Example: 2 QA, throughput 1/day, 3 days left", r["risk_score"], 30))
     results.append(check("Example severity MEDIUM", 1 if r["severity"] == "MEDIUM" else 0, 1, tol=0))
 
-    # Counter: 2 QA, 1 day remains (mult 1.7) -> base=70 -> 119 -> 100 HIGH
+    # Counter: 2 QA, 1 day left. P: clear_ratio=2/1 -> Likely(4). I: 3.
+    # matrix=4x3=12 -> HIGH -> project(12)=70
     sprint_q2 = _sprint(days_elapsed=4, duration=5)
     risks_q2 = eng.detect_qa_bottleneck(sprint_q2, issues_q, ctx_q)
     r = risks_q2[0]
-    results.append(check("Counter: 2 QA, 1 day left", r["risk_score"], 100))
+    results.append(check("Counter: 2 QA, 1 day left", r["risk_score"], 70))
 
     # Board-naming robustness: "QA Review" (without "In") matches too
     issues_q3 = [
@@ -240,7 +248,7 @@ def run():
     risks_q3 = eng.detect_qa_bottleneck(sprint_q, issues_q3, ctx_q)
     results.append(check("'QA Review' variant detected", 1 if risks_q3 else 0, 1, tol=0))
     if risks_q3:
-        results.append(check("'QA Review' variant same score", risks_q3[0]["risk_score"], 54))
+        results.append(check("'QA Review' variant same score", risks_q3[0]["risk_score"], 30))
 
     # ------------------------------------------------------------------ #
     # EXTERNAL_DEPENDENCY
@@ -279,24 +287,25 @@ def run():
     # ------------------------------------------------------------------ #
     print("\nSPRINT_ENDED_INCOMPLETE")
     # Ended 1 day ago with incomplete work: 16 SP total, 8 Done, 8 remaining.
-    # raw = 60 + 1*4 + min(8,20)*1.5 = 76 -> HIGH
+    # P=5 (already ended); I: half the sprint unfinished -> Major(4).
+    # matrix=5x4=20 -> CRITICAL -> project(20)=90
     sprint_o = _sprint(days_elapsed=5, duration=4, name="PFIN Sprint 6")
     issues_o = [_issue("P-1", "Done", 8, 10), _issue("P-2", "To Do", 8, 10)]
     risks_o = eng.detect_sprint_overdue_risk(sprint_o, issues_o)
     r = _first(risks_o, "SPRINT_ENDED_INCOMPLETE incomplete")
     results.append(check("Ended+incomplete: fires SPRINT_ENDED_INCOMPLETE",
                          1 if r["type"] == "SPRINT_ENDED_INCOMPLETE" else 0, 1, tol=0))
-    results.append(check("Ended+incomplete: score 76 (HIGH)", r["risk_score"], 76))
+    results.append(check("Ended+incomplete: score 90 (CRITICAL)", r["risk_score"], 90))
     results.append(check("Ended+incomplete: remaining_sp 8", r["remaining_sp"], 8, tol=0))
 
     # Ended 1 day ago but all work Done in Jira -> still flagged (sprint not closed).
-    # raw = 40 + 1*3 = 43 -> MEDIUM
+    # P=5; I: nothing left undone -> Insignificant(1). matrix=5x1=5 -> MEDIUM -> 20
     issues_o2 = [_issue("P-1", "Done", 8, 10), _issue("P-2", "Done", 8, 10)]
     risks_o2 = eng.detect_sprint_overdue_risk(sprint_o, issues_o2)
     r = _first(risks_o2, "SPRINT_ENDED_INCOMPLETE all-done")
     results.append(check("Ended+all-Done: still flagged (open past deadline)",
                          1 if r["type"] == "SPRINT_ENDED_INCOMPLETE" else 0, 1, tol=0))
-    results.append(check("Ended+all-Done: score 43 (MEDIUM)", r["risk_score"], 43))
+    results.append(check("Ended+all-Done: score 20 (MEDIUM)", r["risk_score"], 20))
 
     # Sprint still in flight -> no overdue risk
     sprint_live = _sprint(days_elapsed=2, duration=4, name="PFIN Sprint 6")
@@ -482,10 +491,11 @@ def run():
     if not creep:
         raise AssertionError("SCOPE_CREEP: estimate hike 3->5 did not trigger")
     c = creep[0]
-    expected_raw = min(settings_scope_cap(), ((5 - 3) / 3) * 100) * time_pressure_multiplier(sprint)
     results.append(check("Scope: type + growth percent", 1 if c["type"] == "SCOPE_CREEP" and abs(c["growth_percent"] - 66.7) < 0.5 else 0, 1, tol=0))
-    results.append(check("Scope: raw = min(cap, growth%) x time pressure", c["raw_score"], round(expected_raw, 1), tol=2))
-    results.append(check("Scope: any triggered creep floors at CRITICAL (>=80)", c["risk_score"], _settings.scope_creep_floor_score, tol=0))
+    results.append(check("Scope: matrix P x I (67% growth, creep already happened)", c["matrix_value"], 25, tol=0))
+    results.append(check("Scope: any triggered creep is CRITICAL (>= floor)",
+                         1 if c["risk_score"] >= _settings.scope_creep_floor_score and c["severity"] == "CRITICAL" else 0,
+                         1, tol=0))
     results.append(check("Scope: floored severity is CRITICAL", 1 if c["severity"] == "CRITICAL" else 0, 1, tol=0))
     results.append(check("Scope: full-confidence baseline", c["confidence"], 75, tol=0))
 

@@ -12,6 +12,8 @@ import hashlib
 from datetime import datetime
 from typing import Any
 
+from risk_matrix import IMPACT_LABELS, PROBABILITY_LABELS
+
 # Statuses a scrum master can attach to a risk (human decision). "pending" is
 # the engine-authored default meaning no human decision has been recorded yet.
 DECISION_STATUSES = ("accepted", "monitoring", "mitigating", "escalated", "dismissed")
@@ -64,6 +66,14 @@ def _severity_reason(risk: dict, drivers: str) -> str:
     """Deterministic 'why is this risk critical/medium/low?' sentence."""
     sev = (risk.get("severity") or "").upper()
     band = _SEVERITY_BANDS.get(sev, "")
+    probability = risk.get("probability")
+    impact = risk.get("impact")
+    if probability and impact:
+        matrix_value = risk.get("matrix_value") or probability * impact
+        return (
+            f"Why {sev}? {drivers} → P{probability} {PROBABILITY_LABELS.get(probability, '')}"
+            f" × I{impact} {IMPACT_LABELS.get(impact, '')} = {matrix_value} → {sev} {band}"
+        ).rstrip()
     raw = risk.get("raw_score")
     score = risk.get("risk_score")
     raw_str = f"{raw:.0f}" if isinstance(raw, (int, float)) else str(raw or "?")
@@ -111,34 +121,45 @@ def attach_factors(risk: dict) -> None:
     """
     sev = (risk.get("severity") or "").upper()
     band = _SEVERITY_BANDS.get(sev, "")
-    raw = risk.get("raw_score")
-    score = risk.get("risk_score")
-    band_chips = []
-    if band and sev:
-        raw_str = _fmt(raw) if raw is not None else "?"
-        score_str = _fmt(score) if score is not None else "?"
-        band_chips.append(f"{sev} {band} (raw {raw_str} → score {score_str})".rstrip())
+    probability = risk.get("probability")
+    impact = risk.get("impact")
 
+    band_chips = []
     factor_chips = []
-    # Multiplier drivers the engine already latches onto each risk. Only drivers
-    # with a non-neutral value are shown.
-    spec = [
-        ("stage_weight", "stage", "🧱"),
-        ("assignee_factor", "assignee", "🙋"),
-        ("size_weight", "size", "⚖️"),
-        ("fan_out", "fan-out", "🔀"),
-    ]
-    for key, label, icon in spec:
-        value = risk.get(key)
-        if value is None:
-            continue
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            continue
-        if abs(value - 1.0) < 0.001:
-            continue
-        factor_chips.append({"icon": icon, "label": f"{label} ×{value:g}"})
+    if probability and impact:
+        matrix_value = risk.get("matrix_value") or probability * impact
+        band_chips.append(f"P{probability} × I{impact} = {matrix_value} → {sev} {band}".rstrip())
+        band_chips.append(
+            f"{PROBABILITY_LABELS.get(probability, '')} probability"
+            f" × {IMPACT_LABELS.get(impact, '')} impact".replace("  ", " ")
+        )
+    else:
+        raw = risk.get("raw_score")
+        score = risk.get("risk_score")
+        if band and sev:
+            raw_str = _fmt(raw) if raw is not None else "?"
+            score_str = _fmt(score) if score is not None else "?"
+            band_chips.append(f"{sev} {band} (raw {raw_str} → score {score_str})".rstrip())
+
+        # Multiplier drivers the engine already latches onto each risk. Only drivers
+        # with a non-neutral value are shown.
+        spec = [
+            ("stage_weight", "stage", "🧱"),
+            ("assignee_factor", "assignee", "🙋"),
+            ("size_weight", "size", "⚖️"),
+            ("fan_out", "fan-out", "🔀"),
+        ]
+        for key, label, icon in spec:
+            value = risk.get(key)
+            if value is None:
+                continue
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+            if abs(value - 1.0) < 0.001:
+                continue
+            factor_chips.append({"icon": icon, "label": f"{label} ×{value:g}"})
 
     risk["factors"] = {
         "band": band_chips,
@@ -282,7 +303,7 @@ def _qa_bottleneck(risk: dict) -> None:
     )
     risk["severity_reason"] = _severity_reason(
         risk,
-        f"{n} stories queued needing ~{clear_days or '?'} days to clear but only {days_left} days left (× time pressure)",
+        f"{n} stories queued needing ~{clear_days or '?'} days to clear but only {days_left} days left",
     )
 
 

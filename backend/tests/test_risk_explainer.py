@@ -120,6 +120,44 @@ def test_burndown_severity_reason() -> None:
     assert "(60-79)" in r["severity_reason"]
 
 
+def test_matrix_severity_reason_uses_p_and_i() -> None:
+    r = _risk(
+        type="QA_BOTTLENECK",
+        issue_key=None,
+        probability=2,
+        impact=3,
+        matrix_value=6,
+        severity="MEDIUM",
+        risk_score=30,
+        raw_score=29.8,
+    )
+    explain_risk(r)
+    reason = r["severity_reason"]
+    assert reason.startswith("Why MEDIUM?")
+    assert "P2 Unlikely × I3 Moderate = 6" in reason
+    assert "raw" not in reason
+
+
+def test_matrix_factors_expose_p_and_i() -> None:
+    r = _risk(
+        type="BURNDOWN_BEHIND",
+        issue_key=None,
+        probability=5,
+        impact=4,
+        matrix_value=20,
+        severity="CRITICAL",
+        risk_score=90,
+        raw_score=90.0,
+    )
+    explain_risk(r)
+    band = " ".join(r["factors"]["band"])
+    assert "P5 × I4 = 20" in band
+    assert "CRITICAL" in band
+    assert "Almost Certain probability" in band
+    assert "Major impact" in band
+    assert r["factors"]["drivers"] == []
+
+
 def test_burndown_signal() -> None:
     r = _risk(
         type="BURNDOWN_BEHIND",
