@@ -2640,11 +2640,26 @@ body {
   align-items: stretch;
   min-width: 520px;
 }
+/* The corner cell carries both axes, stacked. The grid's first column/row
+   headers are taller, so it is bottom-aligned to sit level with them. */
 .risk-matrix-corner {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
   padding: var(--spacing-xs);
+}
+.risk-matrix-axis-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.risk-matrix-axis-line--spread {
+  justify-content: space-between;
+}
+.risk-matrix-axis-arrow {
+  font-size: 10px;
+  color: var(--color-neutral-400);
 }
 .risk-matrix-axis {
   font-size: 10px;

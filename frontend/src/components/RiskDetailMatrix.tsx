@@ -54,10 +54,16 @@ export default function RiskDetailMatrix() {
             Reference scale for reading risk severity. Scoring is not wired to this matrix yet.
           </p>
           <div className="risk-matrix-scroll">
-            <div className="risk-matrix-grid" role="table">
+            <div className="risk-matrix-grid" role="table" aria-label="Probability × Impact risk matrix">
               <div className="risk-matrix-corner" role="columnheader">
-                <span className="risk-matrix-axis">Probability ↓</span>
-                <span className="risk-matrix-axis">Impact →</span>
+                <span className="risk-matrix-axis-line risk-matrix-axis-line--spread">
+                  <span className="risk-matrix-axis">Impact</span>
+                  <span className="risk-matrix-axis-arrow">→</span>
+                </span>
+                <span className="risk-matrix-axis-line">
+                  <span className="risk-matrix-axis">Probability</span>
+                  <span className="risk-matrix-axis-arrow">↓</span>
+                </span>
               </div>
               {IMPACT.map((impact) => (
                 <div key={impact.score} className="risk-matrix-col-head" role="columnheader">
