@@ -56,7 +56,7 @@ export default function RiskDetailMatrix() {
           <div className="risk-matrix-scroll">
             <div className="risk-matrix-grid" role="table" aria-label="Probability × Impact risk matrix">
               <div className="risk-matrix-corner" role="columnheader">
-                <span className="risk-matrix-axis-line risk-matrix-axis-line--spread">
+                <span className="risk-matrix-axis-line">
                   <span className="risk-matrix-axis">Impact</span>
                   <span className="risk-matrix-axis-arrow">→</span>
                 </span>

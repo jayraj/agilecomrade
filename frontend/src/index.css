@@ -2652,21 +2652,18 @@ body {
 .risk-matrix-axis-line {
   display: flex;
   align-items: center;
-  gap: 2px;
-}
-.risk-matrix-axis-line--spread {
-  justify-content: space-between;
+  gap: 8px;
+  justify-content: flex-end;
+  color: #000;
 }
 .risk-matrix-axis-arrow {
   font-size: 10px;
-  color: var(--color-neutral-400);
 }
 .risk-matrix-axis {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-neutral-500);
   white-space: nowrap;
 }
 .risk-matrix-col-head {
