@@ -113,6 +113,13 @@ export interface Blocker {
   completed_sp?: number
   total_sp?: number
   risk_score?: number
+  /* 5x5 probability x impact matrix fields (sprint-level risks, see backend
+   * risk_matrix.py). Present when the risk was scored with the matrix; absent
+   * on ticket-level risks that still use the legacy product model. `matrix_value`
+   * is the 1-25 P x I product that drives the 0-100 risk_score. */
+  probability?: number
+  impact?: number
+  matrix_value?: number
   count?: number
   issue_keys?: string[]
   recommendation?: string
@@ -131,9 +138,10 @@ export interface Blocker {
   /** Human-readable "why is this risk critical/medium/low?" (score-driver math). */
   severity_reason?: string
   /** Score-math transparency: band + driver chips the backend explainer latched
-   *  (`attach_factors` in backend/risk_explainer.py). `band` is plain string[]
-   *  (full "SEVERITY (range) (raw X → score Y)" chip labels), `drivers` are the
-   *  exact {icon,label} multipliers that produced raw_score. Additive: absent on
+   *  (`attach_factors` in backend/risk_explainer.py). For matrix-scored risks
+   *  `band` holds the "P5 × I4 = 20 → SEVERITY (range)" chip plus a named-scale
+   *  chip; for legacy risks it holds the "SEVERITY (range) (raw X → score Y)"
+   *  chip and `drivers` the exact {icon,label} multipliers. Additive: absent on
    *  legacy payloads, so all reads defensively fall back to severity_reason. */
   factors?: {
     band?: string[]

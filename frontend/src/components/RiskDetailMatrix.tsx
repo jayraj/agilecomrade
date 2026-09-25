@@ -17,10 +17,12 @@ const IMPACT = [
   { label: 'Critical', score: 5 },
 ]
 
+// ISO 31005 style bands over the 1..25 product — must mirror
+// backend/risk_matrix.py:MATRIX_BANDS, the source of truth for scoring.
 const SCALE = [
-  { max: 8, band: 'LOW' },
-  { max: 12, band: 'MEDIUM' },
-  { max: 16, band: 'HIGH' },
+  { max: 4, band: 'LOW' },
+  { max: 9, band: 'MEDIUM' },
+  { max: 14, band: 'HIGH' },
   { max: 25, band: 'CRITICAL' },
 ]
 
@@ -45,13 +47,15 @@ export default function RiskDetailMatrix() {
         <ChevronRight size={14} className={open ? 'risk-matrix-chevron open' : 'risk-matrix-chevron'} />
         <Grid3x3 size={14} />
         <span className="risk-matrix-toggle-label">Risk score matrix</span>
-        <span className="risk-matrix-toggle-hint">Probability × Impact — reference only</span>
+        <span className="risk-matrix-toggle-hint">Probability × Impact</span>
       </button>
 
       {open && (
         <div className="risk-matrix-body">
           <p className="risk-matrix-caption">
-            Reference scale for reading risk severity. Scoring is not wired to this matrix yet.
+            ISO 31005 risk scale. Sprint-level risks are scored with this matrix
+            (Probability × Impact); the score shown is the 1-25 product projected
+            onto 0-100.
           </p>
           <div className="risk-matrix-scroll">
             <div className="risk-matrix-grid" role="table" aria-label="Probability × Impact risk matrix">
