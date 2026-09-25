@@ -2575,7 +2575,6 @@ body {
    Cell colors reuse the shared per-severity badge tokens so the matrix and the
    risk cards always read from one severity palette. */
 .risk-matrix {
-  margin: 0 0 var(--spacing-lg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
