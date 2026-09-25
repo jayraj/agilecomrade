@@ -1,4 +1,4 @@
-"""Standard 5x5 Probability x Impact risk matrix (ISO 31005 style).
+"""Standard 5x5 Probability x Impact risk matrix.
 
 The model is deliberately small and self-contained:
 
@@ -22,7 +22,9 @@ threshold table so calibration is auditable and testable.
 from config import settings
 from risk_components import bucket_severity
 
-# ISO 31005 style bands over the 1..25 matrix product.
+# Severity bands over the 1..25 matrix product. These are this app's own
+# calibration, tuned for sprint risk — they are not prescribed by any external
+# standard.
 MATRIX_BANDS = (
     (4, "LOW"),
     (9, "MEDIUM"),

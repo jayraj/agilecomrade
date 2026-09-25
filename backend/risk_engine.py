@@ -1,4 +1,4 @@
-"""Risk engine implementing the Sprint Risk Scoring Rubric v3 (ISO 31005).
+"""Risk engine implementing the Sprint Risk Scoring Rubric v3.
 
 Triggers are unchanged; scoring is a 5x5 Probability x Impact matrix (see
 risk_matrix.py). Each risk emits `risk_score` (0-100, for UI/severity) and

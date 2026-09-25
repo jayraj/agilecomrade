@@ -9,7 +9,7 @@ rule is pinned by the worked examples in `backend/validate_rubric.py` (`python3 
 > `impact` and `matrix_value` for explainability. All detectors keep the same *triggers* as v1; only
 > the scoring changed.
 >
-> **The engine runs one model: a standard 5×5 Probability × Impact matrix (ISO 31005 style).** Every
+> **The engine runs one model: a standard 5×5 Probability × Impact matrix.** Every
 > detector — sprint-level and ticket-level — derives an ordinal `P` and `I` from telemetry and scores
 > `P × I`. The old `base × ∏multipliers` product model and the defect band model have both been
 > retired. See §2.9 and `backend/risk_matrix.py` for the model and the per-detector ladders.
@@ -122,7 +122,7 @@ The frontend mirrors these exact bands in `frontend/src/utils/format.ts`:
 `severityFromScore` (format.ts:26) and `getRiskColor` (format.ts:15) → CRITICAL `#ef4444`,
 HIGH `#d97706`, MEDIUM `#f59e0b`, LOW `#10b981`. The matrix projection (§2.9) is built so that
 `bucket_severity(project_matrix(P×I))` always equals the matrix band — the bands above therefore *are*
-the ISO bands, with no second source of truth.
+the scoring bands, with no second source of truth.
 
 ---
 
@@ -221,7 +221,9 @@ exercise the old helper/constants, so those two are retained.
 
 ## 2.9 The 5×5 Probability × Impact matrix (v3 scoring)
 
-`backend/risk_matrix.py` implements a standard ISO 31005 style risk matrix. Instead of a
+`backend/risk_matrix.py` implements a standard 5×5 Probability × Impact risk matrix — a widespread
+convention in risk assessment. It is *not* prescribed by any external standard: the axis definitions
+and the band thresholds below are this app's own calibration for sprint risk. Instead of a
 detector-specific base multiplied by ad-hoc factors, each risk derives two **1–5** ordinal scales from
 Jira telemetry, and the score is their product:
 
@@ -234,7 +236,7 @@ severity     = matrix band of (P × I)
 risk_score   = project_matrix(P × I)       # band-aligned 0..100
 ```
 
-**ISO 31005 bands over the 1–25 product** (`MATRIX_BANDS`):
+**Severity bands over the 1–25 product** (`MATRIX_BANDS`, app-specific):
 
 | P × I | Severity |
 |:---:|:---|
@@ -651,7 +653,7 @@ with `./venv/bin/python validate_rubric.py`).
   RiskRadar, NextSprintOverview, VelocityTrend only).
 - `RISK_TYPE_META` still maps `STALLED_TICKETS` (`🕒 Stalled Tickets`) in `frontend/src/utils/format.ts:58`,
   but the engine no longer emits that type (it was folded into `STORY_NOT_PROGRESSING`).
-- The matrix UI (`RiskDetailMatrix`) is a **reference** grid: it uses the same ISO bands as the model
+- The matrix UI (`RiskDetailMatrix`) is a **reference** grid: it uses the same bands as the model
   but does not yet highlight the live risks' cells. Highlighting the P/I of active risks on the grid
   is a natural follow-up.
 - These are **display gaps, not scoring bugs** — do not modify the rubric math for them.
