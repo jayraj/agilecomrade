@@ -368,7 +368,10 @@ def test_no_risks_fallback_plan_is_reassurance_not_urgency() -> None:
     assert plan["fallback_reason"] == "not_configured"
     assert "Scrum Master" in plan["owner"]
     assert "no risks detected" in plan["owner"]
-    assert "proactively assess" in plan["owner"]
+    assert "Please proactively keep assessing." in plan["owner"]
+    # A comma (not a semicolon) keeps this a single UI bullet, since
+    # splitItems() in the frontend breaks owner text on ";".
+    assert ";" not in plan["owner"]
     assert plan["timeline"] == "Keep checking (reassess at the next standup)"
 
 

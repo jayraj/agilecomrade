@@ -47,7 +47,7 @@ export default function RiskDetailMatrix() {
         <ChevronRight size={14} className={open ? 'risk-matrix-chevron open' : 'risk-matrix-chevron'} />
         <Grid3x3 size={14} />
         <span className="risk-matrix-toggle-label">Risk score matrix</span>
-        <span className="risk-matrix-toggle-hint">Probability × Impact</span>
+        {/* <span className="risk-matrix-toggle-hint">Probability × Impact</span> */}
       </button>
 
       {open && (

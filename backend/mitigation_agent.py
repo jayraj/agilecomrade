@@ -321,7 +321,7 @@ class MitigationAgent:
                 f"AI mitigation | source=rule-based | provider={self.provider} | sprint={sprint_key} | error={e}"
             )
             if not risks:
-                owner = "Scrum Master — no risks detected; proactively assess the risks"
+                owner = "Scrum Master — no risks detected, Please proactively keep assessing."
                 timeline = "Keep checking (reassess at the next standup)"
             else:
                 owner = self._fallback_owner(risks) or "Scrum Master"
