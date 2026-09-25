@@ -72,7 +72,6 @@ class Settings(BaseSettings):
     dependency_default_base: float = 50.0
     due_date_base_per_day: float = 15.0
     due_date_base_cap: float = 70.0
-    stalled_base_per_2h: float = 1.0  # idle_hours / 2
     stalled_base_cap: float = 50.0
     # Defect quality-risk bands (score range by worst in-sprint defect tier).
     # Tier is derived from the Jira priority field; P1 fixed-before-end and

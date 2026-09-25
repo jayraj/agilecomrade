@@ -13,8 +13,8 @@ worked examples in `backend/validate_rubric.py` (`python3 validate_rubric.py`).
 
 ## 1. Architecture overview
 
-`RiskEngine.calculate_all_risks` (risk_engine.py:63) loops over every project's active sprint and runs
-**nine detectors** per sprint. Each detector runs in isolation (risk_engine.py:85–104): if one raises,
+`RiskEngine.calculate_all_risks` (risk_engine.py:88) loops over every project's active sprint and runs
+**nine detectors** per sprint. Each detector runs in isolation (risk_engine.py:108–129): if one raises,
 it is logged and skipped while the rest still run, so a single rule can never blank the panel.
 
 | # | Detector | Emitted risk type | Level |
@@ -151,13 +151,14 @@ LOW (<20) · MEDIUM (20–59) · HIGH (60–79) · CRITICAL (80+)
 
 ### 2.7.3 The exceptions to the multiplier pattern
 
-- **BUG_RAISED** (risk_engine.py:553) — a **band model**, not `base × multiplier`: the Jira
+- **BUG_RAISED** (risk_engine.py:569) — a **band model**, not `base × multiplier`: the Jira
   priority maps to a tier, each tier owns a score range (`P1_open` 80–90, `P1_fixed` 60–70,
   `P2` 30–50, `P3`/`P4` 10–20), and the score is **linearly interpolated inside the band by defect
-  age across the sprint**. A prod-escaped P1 short-circuits to 100. No shared multiplier is applied.
-- **SPRINT_ENDED_INCOMPLETE** (risk_engine.py:746) — a purely **additive linear formula**
+  age across the sprint**. A prod-escaped P1 short-circuits to 100. No shared multiplier is applied
+  (`RISK_RECIPES["BUG_RAISED"] = ()`).
+- **SPRINT_ENDED_INCOMPLETE** (risk_engine.py:768) — a purely **additive linear formula**
   (`60 + days_overdue×4 + min(remaining_sp, 20)×1.5`, or `40 + days_overdue×3` when all work is Done),
-  with no multiplier tables.
+  with no multiplier tables (`RISK_RECIPES["SPRINT_ENDED_INCOMPLETE"] = ()`).
 - **SCOPE_CREEP** — uses the multiplier path (`min(85, growth%) × time-pressure`) but is a *hybrid*:
   the product rule ("any confirmed creep is a red flag") means the displayed score is floored at
   **80 / CRITICAL** regardless of how small the growth was.
@@ -165,20 +166,127 @@ LOW (<20) · MEDIUM (20–59) · HIGH (60–79) · CRITICAL (80+)
 > This is why the engine emits both `raw_score` and `risk_score`: the multiplier-heavy rules can
 > produce very different raw magnitudes, and capping them all at 100 for display would make the truly
 > dominant driver indistinguishable in sprint-to-sprint triage — the uncapped `raw_score` preserves
-> that ordering (the risks list is sorted by it, risk_engine.py:106).
+> that ordering (the risks list is sorted by it, risk_engine.py:131).
+
+### 2.7.4 How the framework lives in the code
+
+The multiplier matrix in §2.7.2 is now a first-class artifact in `risk_engine.py` — the module-level
+`RISK_RECIPES` table (risk_engine.py:70) maps every risk type to the ordered list of multiplier
+**names** that apply to it, and the shared pipeline (§2.8) consumes it. Updating "which multiplier a
+detector uses" is now a one-line table edit instead of editing a detector's math.
+
+---
+
+## 2.8 Implementation: original vs refactored (behavior-preserving)
+
+The scoring math in §3 is the contract and is **unchanged**. The original implementation inlined each
+detector's risk-dict tail (the same ~5 keys `risk_score` / `raw_score` / `confidence` / `severity` /
+`recommendation`) and multiplied each factor inline. A refactor collapsed that into one shared
+pipeline — `RISK_RECIPES` + `_apply_recipe` + `_emit` — with **no numeric change**. This section keeps
+both versions so the mapping stays auditable.
+
+### Original (pre-refactor) — inline product + per-detector dict tail
+
+Every multiplier-capable detector spelled out its full formula and then pasted a near-identical tail:
+
+```python
+# STORY_NOT_PROGRESSING — original
+base = min(settings.stalled_base_cap, h / 2.0)
+stage = workflow_stage_weight(issue.get("status"))
+af = assignee_factor(issues, issue.get("assignee"))
+sw = size_weight(issue.get("story_points") or 0, avg_sp)
+raw = base * stage * af * sw
+score = cap_score(raw)
+risks.append({
+    "type": "STORY_NOT_PROGRESSING",
+    "issue_key": key, "summary": ..., "assignee": ..., "status": ..., "hours_since_update": ...,
+    "risk_score": score,
+    "raw_score": round(raw, 1),
+    "confidence": 85,
+    "severity": bucket_severity(score),
+    "recommendation": (...),
+    **detail,
+})
+```
+
+The 9 detectors duplicated this tail ~9–14 times (cap_score ×10, "risk_score" ×14, severity ×9).
+
+### Refactored — recipe-driven base signal + one shared emitter
+
+Now a detector only supplies its **base**, the **factors it actually computed**, and its **extras**;
+the recipe decides the multipliers and the tail is emitted once:
+
+```python
+# STORY_NOT_PROGRESSING — refactored
+base = min(settings.stalled_base_cap, h / 2.0)
+factors = {
+    "stage": workflow_stage_weight(issue.get("status")),
+    "assignee": assignee_factor(issues, issue.get("assignee")),
+    "size": size_weight(issue.get("story_points") or 0, avg_sp),
+}
+raw = self._apply_recipe(base, RISK_RECIPES["STORY_NOT_PROGRESSING"], factors)
+risks.append(self._emit("STORY_NOT_PROGRESSING", raw, 85, recommendation,
+                        issue_key=key, ..., **detail))
+```
+
+**The two helpers** (risk_engine.py:142 / risk_engine.py:156):
+
+```python
+def _apply_recipe(base, recipe, values):
+    """Multiply base by each named multiplier in `recipe`; missing factors ~ 1.0."""
+    for name in recipe:
+        base *= values.get(name, 1.0) or 1.0
+    return base
+
+def _emit(risk_type, raw, confidence, recommendation, score_floor=None, **extras):
+    """Single scoring tail: risk_score = min(100, round(raw)); bucket severity."""
+    score = max(cap_score(raw), score_floor) if score_floor is not None else cap_score(raw)
+    risk = {"type": ..., "risk_score": score, "raw_score": round(raw, 1),
+            "confidence": ..., "severity": bucket_severity(score), "recommendation": ...}
+    risk.update(extras)
+    return risk
+```
+
+**Why this preserves every number exactly:**
+
+- `cap_score` itself rounds (`risk_components.py:167` → `min(100, int(round(raw)))`), so the original
+  BUG_RAISED `cap_score(int(round(raw)))` is identical to `_emit`'s `cap_score(raw)` — every band
+  boundary lands the same. All other detectors already called `cap_score(raw)` directly.
+- `raw_score = round(raw, 1)` was identical across every original tail.
+- Empty recipes (`BUG_RAISED`, `SPRINT_ENDED_INCOMPLETE`) multiply nothing, so the band and additive
+  models pass through untouched.
+- `SCOPE_CREEP` dropped its explicit `score = max(cap_score(raw), floor)` into `_emit`'s
+  `score_floor` argument — same CRITICAL floor, same `raw_score`.
+
+**Per-risk mapping (original → refactored):**
+
+| Risk type | `RISK_RECIPES` | Factors fed to `_apply_recipe` | Extras in `_emit` (payload byte-identical) |
+|---|:---:|---|---|
+| STORY_NOT_PROGRESSING | `(stage, assignee, size)` | stage, assignee, size | issue_key, summary, assignee, status, hours_since_update, stage_weight, assignee_factor, size_weight |
+| SPRINT_NOT_STARTED | `(pressure,)` | pressure | sprint_key, summary, days_elapsed, open_count |
+| BURNDOWN_BEHIND | `(trend, pressure)` | trend, pressure | sprint_key, issue_keys, total_sp, completed_sp, weighted_completed_sp, remaining_sp, days_remaining, burndown_gap_percent |
+| QA_BOTTLENECK | `(pressure,)` | pressure | sprint_key, issue_keys, qa_stories_count, qa_throughput_per_day, backlog_clear_days, days_remaining, stuck_stories |
+| EXTERNAL_DEPENDENCY | `(fan_out, size)` | fan_out, size | issue_key, summary, dependency_detail, dependency_base, fan_out |
+| DUE_DATE_PASSED | `(stage, size, blocking)` | per-ticket stage, size, blocking | sprint_key, issue_keys, overdue_issues, count |
+| BUG_RAISED | `()` band model | — | sprint_key, issue_key, issue_keys, summary, assignee, status, priority, tier, band, days_since_created |
+| SCOPE_CREEP | `(pressure,)` | pressure (+ `score_floor`) | sprint_key, issue_keys, baseline_sp, current_sp, growth_percent, added_issues, story_point_hikes, late_baseline |
+| SPRINT_ENDED_INCOMPLETE | `()` additive | — | sprint_key, issue_keys, total_sp, completed_sp, remaining_sp, days_overdue |
+
+**Dead code removed in the refactor:** `config.py`'s `stalled_base_per_2h = 1.0` (was line 75) was
+never read — `_stalled_ticket_score` always hardcoded `h / 2.0`. It is gone; no behavior change.
 
 ---
 
 ## 3. Detector-by-detector formulas
 
-### 3.1 STORY_NOT_PROGRESSING (ticket-level) — risk_engine.py:116
+### 3.1 STORY_NOT_PROGRESSING (ticket-level) — risk_engine.py:182
 **Detector.** Flags tickets that went *quiet during the current sprint*. Staleness is measured from
 `max(last update, sprint start)` so pre-sprint silence (backlog tickets pulled in) never inflates the
 score — only in-sprint inactivity counts.
 
 **Trigger.** Not Done AND `hours_since(max(updated, sprint_start)) > 24` (STALE_HOURS).
 
-**Formula** (`_stalled_ticket_score`, risk_engine.py:221):
+**Formula** (`_stalled_ticket_score`, risk_engine.py:283):
 
 ```
 base  = min(50, hours_silent / 2)          # 1 idle-hour → +0.5, capped 50
@@ -194,7 +302,7 @@ raw_score = base * stage * af * sw
 - Mid-sprint ticket updated 10h ago → stays silent (no risk).
 - The same stale ticket in a week-old sprint (more in-sprint silence) scores strictly higher.
 
-### 3.2 SPRINT_NOT_STARTED (sprint-level) — risk_engine.py:165
+### 3.2 SPRINT_NOT_STARTED (sprint-level) — risk_engine.py:228
 **Detector.** A sprint that is *currently active* but where 0 tickets have moved out of a start column.
 It exists because STORY_NOT_PROGRESSING only judges per-ticket silence and is gated by the burndown
 grace period; this judges the whole sprint's progress state.
@@ -217,7 +325,7 @@ raw_score = base * tp
 - One ticket In Progress → stays silent.
 - Day 1 (inside grace window) or pre-start sprints → stay silent.
 
-### 3.3 BURNDOWN_BEHIND (sprint-level) — risk_engine.py:248
+### 3.3 BURNDOWN_BEHIND (sprint-level) — risk_engine.py:361
 **Detector.** Compares actual completion (weighted by `status_completion_weights`) against the ideal
 linear burn line. Not judged before the sprint is 25% elapsed (grace period).
 
@@ -248,7 +356,7 @@ raw_score = base * tf * tp
 The per-check-in gap is persisted (`main.py:238`) as a capped 8-point history so the trend factor
 can see widening vs shrinking.
 
-### 3.4 QA_BOTTLENECK (sprint-level) — risk_engine.py:340
+### 3.4 QA_BOTTLENECK (sprint-level) — risk_engine.py:405
 **Detector.** Models QA as a capacity-vs-time constraint: can the QA queue clear before the sprint ends?
 
 **Trigger.** At least `qa_bottleneck_threshold` (**2**) stories in a QA column (accepts both
@@ -275,10 +383,10 @@ raw_score = base * tp
   which it accepts under its ±2 tolerance).
 - Same queue, 1 day left (pressure 1.7): `70 × 1.7 = 119` → **100 HIGH**.
 
-### 3.5 EXTERNAL_DEPENDENCY (ticket-level) — risk_engine.py:393
+### 3.5 EXTERNAL_DEPENDENCY (ticket-level) — risk_engine.py:457
 **Detector.** Keyword scan of the free-text description for dependency language. Not Done required.
 
-**Base score by dependency class** (risk_engine.py:47, config.py:70):
+**Base score by dependency class** (risk_engine.py:51, config.py:70):
 - **external** (`vendor`, `third-party`, `procurement`, `external`, `credentials`) → base **75**
 - **internal** (`another team`, `internal`, `platform team`, `another squad`, `squad`) → base **50**
 - **default** (either/both keywords) → base **50**
@@ -298,7 +406,7 @@ raw_score = dependency_base * fan_out * sw
 - Internal "Platform team" dependency, nothing blocked, 2 SP vs avg 5 (size 0.82) →
   `50 × 1.0 × 0.82 = 41` → **41 MEDIUM**.
 
-### 3.6 DUE_DATE_PASSED (sprint-level, max-of-tickets) — risk_engine.py:440
+### 3.6 DUE_DATE_PASSED (sprint-level, max-of-tickets) — risk_engine.py:502
 **Detector.** Collects tickets with a due date strictly before *today's calendar date in the user's
 Jira timezone* (so "overdue" matches what the user sees in Jira even if the server runs in UTC).
 
@@ -325,7 +433,7 @@ risk_score = min(100, round(raw_score))
   `min(70,15) × 1.1 × 1.0 × 1.3 = 15 × 1.43 = 21.45` → **21** (LOW–MEDIUM boundary).
 - 4 days overdue, QA (1.3), blocks 2 (1.3): `min(70,60) × 1.3 × 1.0 × 1.3 = 101.4` → **100 HIGH**.
 
-### 3.7 BUG_RAISED (ticket-level, in-sprint defect) — risk_engine.py:509
+### 3.7 BUG_RAISED (ticket-level, in-sprint defect) — risk_engine.py:569
 **Detector.** Flags bugs **created during the current sprint** (created ≥ sprint start) — defects this
 sprint *injected*, not backlog debt pulled in. Jira priority maps to a quality-risk tier:
 
@@ -364,7 +472,7 @@ raw  = low + (high - low) * frac
 - Prod-escaped P1: **100 CRITICAL**.
 - Bug created *before* sprint start → not flagged; fixed P2 → skipped.
 
-### 3.8 SCOPE_CREEP (sprint-level, vs first-active-sync baseline) — risk_engine.py:616
+### 3.8 SCOPE_CREEP (sprint-level, vs first-active-sync baseline) — risk_engine.py:672
 **Detector.** Compares against a baseline captured automatically on the **first sync while the sprint
 is active** (the planning commitment). Requires ≥ 2 scope-history points before judging, so
 single-sync noise and future sprints never fire.
@@ -385,7 +493,7 @@ score    = max(cap_score(raw), scope_creep_floor_score)   # floor 80 → ALWAYS 
 ```
 
 **Product rule:** *any* confirmed scope creep is a red flag, even +1 SP — the displayed score is
-floored at **80** (CRITICAL) (`scope_creep_floor_score`, config.py:116), with the uncapped `raw_score`
+floored at **80** (CRITICAL) (`scope_creep_floor_score`, config.py:115), with the uncapped `raw_score`
 still serialized for triage. `confidence: 75` (or **60** if the baseline was captured late, i.e.
 > 24h after sprint start).
 
@@ -396,7 +504,7 @@ Worked examples (validate_rubric.py:470):
 - Only 1 history point → silent (needs ≥ 2).
 - A single +5 SP added issue still floors red.
 
-### 3.9 SPRINT_ENDED_INCOMPLETE (sprint-level) — risk_engine.py:711
+### 3.9 SPRINT_ENDED_INCOMPLETE (sprint-level) — risk_engine.py:768
 **Detector.** Fires when the sprint's end date has passed **but Jira still lists it as active**.
 Catches the "no risk shown" gap where every in-flight detector has already gone quiet.
 
@@ -425,7 +533,7 @@ raw = min(80, 40 + days_overdue * 3)
 
 ## 4. Next-sprint (pre-planning) risks — v1 formulas, out of v2 scope
 
-`calculate_next_sprint_risks` (risk_engine.py:783) scores upcoming-sprint hygiene with simple
+`calculate_next_sprint_risks` (risk_engine.py:835) scores upcoming-sprint hygiene with simple
 linear formulas (raw v1 style, `severity` set directly rather than bucket):
 
 | Type | Formula | Severity |
@@ -436,7 +544,7 @@ linear formulas (raw v1 style, `severity` set directly rather than bucket):
 | `SIZING_RISK` | `min(100, 50 + count×15)` (issues ≥ 8 SP) | MEDIUM |
 
 It also reuses `EXTERNAL_DEPENDENCY` and `DUE_DATE_PASSED` rules. Project readiness =
-`aggregate_risk_score` (risk_engine.py:859):
+`aggregate_risk_score` (risk_engine.py:911):
 
 ```
 score = top score + Σ(remaining scores × 0.2),   capped 100
@@ -468,7 +576,7 @@ score = top score + Σ(remaining scores × 0.2),   capped 100
    - `factors` / `score_math` blocks carrying the exact multiplier chips the formula used
      (stage ×assignee ×size ×fan-out ×blocking ×trend ×pressure).
 6. **Health rollups:**
-   - `generate_risk_summary` (risk_engine.py:868):
+   - `generate_risk_summary` (risk_engine.py:920):
      `overall_sprint_health = max(0, 100 − (high×20 + medium×10))`.
    - `DeliveryHealth` (snapshot.py:221): RAG = RED when a CRITICAL/HIGH risk exists or burndown
      gap ≥ 25; AMBER for medium/other risks or gap ≥ 10; GREEN otherwise. `timeline_risk_score`
@@ -490,6 +598,9 @@ It additionally locks: detector isolation (one injected failure doesn't abort th
 privacy pseudonymization, timezone-aware overdue math, sprint-clamped stale-hour math, and
 scope-baseline persistence. Per the repo's convention, backend changes must keep this passing.
 
+The §2.8 refactor ran this suite before and after and must stay byte-identical — current status
+**67/67 PASS** (pydantic lives in the venv, so run with `./venv/bin/python validate_rubric.py`).
+
 ---
 
 ## 7. Review observations (found while tracing)
@@ -503,4 +614,6 @@ scope-baseline persistence. Per the repo's convention, backend changes must keep
   RiskRadar, NextSprintOverview, VelocityTrend only).
 - `RISK_TYPE_META` still maps `STALLED_TICKETS` (`🕒 Stalled Tickets`) in `frontend/src/utils/format.ts:58`,
   but the v2 engine no longer emits that type (it was folded into `STORY_NOT_PROGRESSING`).
+- `config.py` once shipped a `stalled_base_per_2h = 1.0` knob that no detector ever read (the stalled
+  formula hardcodes `h / 2.0`). The §2.8 refactor deleted it — dead config, not a scoring rule.
 - These are **display/legacy gaps, not scoring bugs** — do not modify the rubric math for them.

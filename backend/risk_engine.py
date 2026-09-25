@@ -54,6 +54,31 @@ DEPENDENCY_BASE = {
     "default": settings.dependency_default_base,
 }
 
+# The generic scoring pipeline: every detector computes its own `base` signal
+# (see each detector below) and then a single shared tail turns it into a risk:
+#
+#     raw_score = base × ∏(named multipliers)      # uncapped, for triage
+#     risk_score = min(100, round(raw_score))      # capped, for UI/severity
+#     severity = bucket_severity(risk_score)       # <20 / 20-59 / 60-79 / 80+
+#
+# RISK_RECIPES is the single source of truth for WHICH multipliers apply to
+# WHICH risk type (mirrors the docs/risk-engine-scoring-review.md matrix). A
+# detector is built by the generic `_apply_recipe`, which multiplies in each
+# named factor (missing entries default to a neutral 1.0). Risk types that do
+# not use the multiplier model (BUG_RAISED band model, SPRINT_ENDED_INCOMPLETE
+# additive formula, DUE_DATE's max-aggregate) list an empty recipe.
+RISK_RECIPES = {
+    "STORY_NOT_PROGRESSING": ("stage", "assignee", "size"),
+    "SPRINT_NOT_STARTED": ("pressure",),
+    "BURNDOWN_BEHIND": ("trend", "pressure"),
+    "QA_BOTTLENECK": ("pressure",),
+    "EXTERNAL_DEPENDENCY": ("fan_out", "size"),
+    "DUE_DATE_PASSED": ("stage", "size", "blocking"),  # per-ticket; the sprint risk maxes them
+    "BUG_RAISED": (),  # band model - the base IS the score
+    "SCOPE_CREEP": ("pressure",),  # + score_floor applied by the detector
+    "SPRINT_ENDED_INCOMPLETE": (),  # additive formula - the base IS the score
+}
+
 
 class RiskEngine:
 
@@ -111,6 +136,47 @@ class RiskEngine:
         return qa_throughput_per_day(velocity_data, project_key)
 
     # ------------------------------------------------------------------ #
+    # Generic scoring helpers (shared by every detector)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _apply_recipe(base, recipe, values):
+        """Multiply `base` by each named multiplier in `recipe`.
+
+        Each name is looked up in `values` (a dict the detector builds with the
+        exact factors it computed); a missing key defaults to a neutral 1.0 so a
+        detector can legitimately omit factors that don't apply to a given ticket.
+        Returns the uncapped `base` product — the shared scoring tail (_emit)
+        caps and buckets it.
+        """
+        for name in recipe:
+            factor = values.get(name, 1.0)
+            base *= factor if factor is not None else 1.0
+        return base
+
+    def _emit(self, risk_type, raw, confidence, recommendation, score_floor=None, **extras):
+        """Build the common risk payload for any detector.
+
+        Applies the shared scoring tail exactly once per risk — cap to 100,
+        bucket into a severity — so detectors only supply their uncapped `raw`,
+        confidence, recommendation, and type-specific diagnostics. `score_floor`
+        is an optional minimum displayed score (used by SCOPE_CREEP's product
+        rule, which forces any confirmed creep into CRITICAL).
+        """
+        score = cap_score(raw)
+        if score_floor is not None:
+            score = max(score, score_floor)
+        risk = {
+            "type": risk_type,
+            "risk_score": score,
+            "raw_score": round(raw, 1),
+            "confidence": confidence,
+            "severity": bucket_severity(score),
+            "recommendation": recommendation,
+        }
+        risk.update(extras)
+        return risk
+
+    # ------------------------------------------------------------------ #
     # 1. STORY_NOT_PROGRESSING (ticket-level)
     # ------------------------------------------------------------------ #
     def detect_story_progress_risks(self, sprint, issues, context=None):
@@ -138,24 +204,21 @@ class RiskEngine:
             if h <= STALE_HOURS:
                 continue
 
-            raw, score, detail = self._stalled_ticket_score(h, issue, issues, avg_sp)
-            risks.append({
-                "type": "STORY_NOT_PROGRESSING",
-                "issue_key": key,
-                "summary": issue.get("summary"),
-                "assignee": issue.get("assignee"),
-                "status": status,
-                "hours_since_update": round(h, 1),
-                "risk_score": score,
-                "raw_score": round(raw, 1),
-                "confidence": 85,
-                "severity": bucket_severity(score),
-                "recommendation": (
+            raw, detail = self._stalled_ticket_score(h, issue, issues, avg_sp)
+            risks.append(self._emit(
+                "STORY_NOT_PROGRESSING",
+                raw, 85,
+                (
                     f"Story '{key}' has no updates in {int(h)}h. "
                     f"Check with {issue.get('assignee')} for blockers."
                 ),
+                issue_key=key,
+                summary=issue.get("summary"),
+                assignee=issue.get("assignee"),
+                status=status,
+                hours_since_update=round(h, 1),
                 **detail,
-            })
+            ))
 
         return risks
 
@@ -197,26 +260,25 @@ class RiskEngine:
             return []  # at least one ticket has moved out of the start column
 
         base = min(settings.no_progress_cap, days_elapsed * settings.no_progress_per_day)
-        tp = time_pressure_multiplier(sprint)
-        raw = base * tp
-        score = cap_score(raw)
+        raw = self._apply_recipe(
+            base,
+            RISK_RECIPES["SPRINT_NOT_STARTED"],
+            {"pressure": time_pressure_multiplier(sprint)},
+        )
 
-        return [{
-            "type": "SPRINT_NOT_STARTED",
-            "sprint_key": sprint.get("name"),
-            "summary": sprint.get("name"),
-            "risk_score": score,
-            "raw_score": round(raw, 1),
-            "confidence": 90,
-            "severity": bucket_severity(score),
-            "recommendation": (
+        return [self._emit(
+            "SPRINT_NOT_STARTED",
+            raw, 90,
+            (
                 f"Sprint '{sprint.get('name')}' started {days_elapsed}d ago but "
                 f"0 of {len(open_issues)} tickets are In Progress (all To Do). "
                 f"Confirm work has kicked off or re-plan scope."
             ),
-            "days_elapsed": days_elapsed,
-            "open_count": len(open_issues),
-        }]
+            sprint_key=sprint.get("name"),
+            summary=sprint.get("name"),
+            days_elapsed=days_elapsed,
+            open_count=len(open_issues),
+        )]
 
     def _stalled_ticket_score(self, h, issue, issues, avg_sp):
         """Per-ticket stalled formula (used by STORY_NOT_PROGRESSING).
@@ -225,14 +287,16 @@ class RiskEngine:
         detector so pre-sprint silence never inflates the score.
         """
         base = min(settings.stalled_base_cap, h / 2.0)
-        stage = workflow_stage_weight(issue.get("status"))
-        af = assignee_factor(issues, issue.get("assignee"))
-        sw = size_weight(issue.get("story_points") or 0, avg_sp)
-        raw = base * stage * af * sw
-        return raw, cap_score(raw), {
-            "stage_weight": stage,
-            "assignee_factor": af,
-            "size_weight": round(sw, 3),
+        factors = {
+            "stage": workflow_stage_weight(issue.get("status")),
+            "assignee": assignee_factor(issues, issue.get("assignee")),
+            "size": size_weight(issue.get("story_points") or 0, avg_sp),
+        }
+        raw = self._apply_recipe(base, RISK_RECIPES["STORY_NOT_PROGRESSING"], factors)
+        return raw, {
+            "stage_weight": factors["stage"],
+            "assignee_factor": factors["assignee"],
+            "size_weight": round(factors["size"], 3),
         }
 
     # ------------------------------------------------------------------ #
@@ -306,31 +370,32 @@ class RiskEngine:
             return risks
 
         # v2: trend + time pressure composition
-        base_severity = min(settings.burndown_gap_cap, burndown_gap)
-        tf = trend_factor(context.get("burndown_history") or [])
-        tp = time_pressure_multiplier(sprint)
-        raw = base_severity * tf * tp
-        score = cap_score(raw)
+        base = min(settings.burndown_gap_cap, burndown_gap)
+        raw = self._apply_recipe(
+            base,
+            RISK_RECIPES["BURNDOWN_BEHIND"],
+            {
+                "trend": trend_factor(context.get("burndown_history") or []),
+                "pressure": time_pressure_multiplier(sprint),
+            },
+        )
 
-        risks.append({
-            "type": "BURNDOWN_BEHIND",
-            "sprint_key": sprint.get("name"),
-            "issue_keys": [i.get("key") for i in issues if not is_done(i.get("status"))],
-            "total_sp": data["total_sp"],
-            "completed_sp": data["completed_sp"],
-            "weighted_completed_sp": data["weighted_completed_sp"],
-            "remaining_sp": data["remaining_sp"],
-            "days_remaining": data["days_remaining"],
-            "burndown_gap_percent": burndown_gap,
-            "risk_score": score,
-            "raw_score": round(raw, 1),
-            "confidence": 90,
-            "severity": bucket_severity(score),
-            "recommendation": (
+        risks.append(self._emit(
+            "BURNDOWN_BEHIND",
+            raw, 90,
+            (
                 f"Burndown {burndown_gap:.1f}% behind. Need to complete "
                 f"{data['remaining_sp']:.0f} SP in {data['days_remaining']} days."
             ),
-        })
+            sprint_key=sprint.get("name"),
+            issue_keys=[i.get("key") for i in issues if not is_done(i.get("status"))],
+            total_sp=data["total_sp"],
+            completed_sp=data["completed_sp"],
+            weighted_completed_sp=data["weighted_completed_sp"],
+            remaining_sp=data["remaining_sp"],
+            days_remaining=data["days_remaining"],
+            burndown_gap_percent=burndown_gap,
+        ))
 
         return risks
 
@@ -362,28 +427,27 @@ class RiskEngine:
         backlog_clear_days = qa_queue_count / throughput if throughput > 0 else qa_queue_count
         days_left = days_remaining(sprint)
         base = min(settings.qa_backlog_cap, (backlog_clear_days / days_left) * 100)
-        tp = time_pressure_multiplier(sprint)
-        raw = base * tp
-        score = cap_score(raw)
+        raw = self._apply_recipe(
+            base,
+            RISK_RECIPES["QA_BOTTLENECK"],
+            {"pressure": time_pressure_multiplier(sprint)},
+        )
 
-        risks.append({
-            "type": "QA_BOTTLENECK",
-            "sprint_key": sprint.get("name") if sprint else None,
-            "issue_keys": [s.get("key") for s in qa_stories],
-            "qa_stories_count": qa_queue_count,
-            "qa_throughput_per_day": round(throughput, 2),
-            "backlog_clear_days": round(backlog_clear_days, 2),
-            "days_remaining": days_left,
-            "stuck_stories": stuck_stories,
-            "risk_score": score,
-            "raw_score": round(raw, 1),
-            "confidence": 80,
-            "severity": bucket_severity(score),
-            "recommendation": (
+        risks.append(self._emit(
+            "QA_BOTTLENECK",
+            raw, 80,
+            (
                 f"{qa_queue_count} stories in QA Review. Consider adding QA "
                 f"resource or running parallel testing."
             ),
-        })
+            sprint_key=sprint.get("name") if sprint else None,
+            issue_keys=[s.get("key") for s in qa_stories],
+            qa_stories_count=qa_queue_count,
+            qa_throughput_per_day=round(throughput, 2),
+            backlog_clear_days=round(backlog_clear_days, 2),
+            days_remaining=days_left,
+            stuck_stories=stuck_stories,
+        ))
 
         return risks
 
@@ -410,27 +474,25 @@ class RiskEngine:
             else:
                 dep_base = DEPENDENCY_BASE["default"]
 
-            fan_out = settings.fan_out_factor if issue.get("key") in blocking_map else 1.0
-            sw = size_weight(issue.get("story_points") or 0, avg_sp)
-            raw = dep_base * fan_out * sw
-            score = cap_score(raw)
+            factors = {
+                "fan_out": settings.fan_out_factor if issue.get("key") in blocking_map else 1.0,
+                "size": size_weight(issue.get("story_points") or 0, avg_sp),
+            }
+            raw = self._apply_recipe(dep_base, RISK_RECIPES["EXTERNAL_DEPENDENCY"], factors)
 
-            risks.append({
-                "type": "EXTERNAL_DEPENDENCY",
-                "issue_key": issue["key"],
-                "summary": issue.get("summary"),
-                "dependency_detail": issue.get("blocked_by", "External dependency mentioned in description"),
-                "dependency_base": dep_base,
-                "fan_out": fan_out,
-                "risk_score": score,
-                "raw_score": round(raw, 1),
-                "confidence": 75,
-                "severity": bucket_severity(score),
-                "recommendation": (
+            risks.append(self._emit(
+                "EXTERNAL_DEPENDENCY",
+                raw, 75,
+                (
                     f"Story '{issue['key']}' has external dependency. "
                     f"Verify status and escalate if blocked."
                 ),
-            })
+                issue_key=issue["key"],
+                summary=issue.get("summary"),
+                dependency_detail=issue.get("blocked_by", "External dependency mentioned in description"),
+                dependency_base=dep_base,
+                fan_out=factors["fan_out"],
+            ))
 
         return risks
 
@@ -461,10 +523,12 @@ class RiskEngine:
 
             days_overdue = (today - due).days
             base = min(settings.due_date_base_cap, days_overdue * settings.due_date_base_per_day)
-            stage = workflow_stage_weight(issue.get("status"))
-            sw = size_weight(issue.get("story_points") or 0, avg_sp)
-            blocking = settings.blocking_factor if issue.get("key") in blocking_map else 1.0
-            raw = base * stage * sw * blocking
+            factors = {
+                "stage": workflow_stage_weight(issue.get("status")),
+                "size": size_weight(issue.get("story_points") or 0, avg_sp),
+                "blocking": settings.blocking_factor if issue.get("key") in blocking_map else 1.0,
+            }
+            raw = self._apply_recipe(base, RISK_RECIPES["DUE_DATE_PASSED"], factors)
 
             overdue.append({
                 "key": issue["key"],
@@ -472,8 +536,8 @@ class RiskEngine:
                 "due_date": due_date,
                 "assignee": issue.get("assignee"),
                 "days_overdue": days_overdue,
-                "stage_weight": stage,
-                "size_weight": round(sw, 3),
+                "stage_weight": factors["stage"],
+                "size_weight": round(factors["size"], 3),
                 "is_blocking": issue.get("key") in blocking_map,
                 "raw_score": round(raw, 1),
                 "risk_score": cap_score(raw),
@@ -483,23 +547,19 @@ class RiskEngine:
             return risks
 
         raw = max(o["raw_score"] for o in overdue)
-        score = cap_score(raw)
 
-        risks.append({
-            "type": "DUE_DATE_PASSED",
-            "sprint_key": sprint.get("name") if sprint else None,
-            "issue_keys": [o["key"] for o in overdue],
-            "overdue_issues": overdue,
-            "count": len(overdue),
-            "risk_score": score,
-            "raw_score": round(raw, 1),
-            "confidence": 85,
-            "severity": bucket_severity(score),
-            "recommendation": (
+        risks.append(self._emit(
+            "DUE_DATE_PASSED",
+            raw, 85,
+            (
                 f"{len(overdue)} ticket(s) are past their due date. "
                 f"Escalate immediately and reassign to unblock delivery."
             ),
-        })
+            sprint_key=sprint.get("name") if sprint else None,
+            issue_keys=[o["key"] for o in overdue],
+            overdue_issues=overdue,
+            count=len(overdue),
+        ))
 
         return risks
 
@@ -562,7 +622,6 @@ class RiskEngine:
                 low, high = settings.bug_tier_bands[band_name]
                 frac = min(1.0, days_old / sprint_days) if sprint_days else 0.0
                 raw = low + (high - low) * frac
-            score = cap_score(int(round(raw)))
 
             if escaped:
                 recommendation = (
@@ -589,24 +648,21 @@ class RiskEngine:
                     f"Triage and fix forward to protect the sprint goal."
                 )
 
-            risks.append({
-                "type": "BUG_RAISED",
-                "sprint_key": sprint.get("name") if sprint else None,
-                "issue_key": issue.get("key"),
-                "issue_keys": [issue.get("key")],
-                "summary": issue.get("summary"),
-                "assignee": issue.get("assignee"),
-                "status": status,
-                "priority": priority,
-                "tier": tier,
-                "band": band_name,
-                "days_since_created": round(days_old, 1),
-                "risk_score": score,
-                "raw_score": round(raw, 1),
-                "confidence": 80,
-                "severity": bucket_severity(score),
-                "recommendation": recommendation,
-            })
+            risks.append(self._emit(
+                "BUG_RAISED",
+                raw, 80,
+                recommendation,
+                sprint_key=sprint.get("name") if sprint else None,
+                issue_key=issue.get("key"),
+                issue_keys=[issue.get("key")],
+                summary=issue.get("summary"),
+                assignee=issue.get("assignee"),
+                status=status,
+                priority=priority,
+                tier=tier,
+                band=band_name,
+                days_since_created=round(days_old, 1),
+            ))
 
         return risks
 
@@ -666,11 +722,12 @@ class RiskEngine:
         # Pure additions/hikes with sub-threshold net growth still count as
         # at least a threshold-level signal.
         base = max(growth, min_growth) if (added or hiked) else growth
-        tp = time_pressure_multiplier(sprint)
-        raw = min(settings.scope_creep_cap, base) * tp
-        # Unplanned work absorbed mid-sprint is always a red flag, even +1 SP:
-        # floor the displayed score so severity lands in CRITICAL.
-        score = max(cap_score(raw), settings.scope_creep_floor_score)
+        raw = self._apply_recipe(
+            min(settings.scope_creep_cap, base),
+            RISK_RECIPES["SCOPE_CREEP"],
+            {"pressure": time_pressure_multiplier(sprint)},
+        )
+        confidence = 60 if baseline.get("late_capture") else 75
 
         parts = [f"Sprint scope grew {growth:.0f}% since planning ({baseline_sp:.0f} → {current_sp} SP)."]
         if added:
@@ -686,22 +743,22 @@ class RiskEngine:
             "silently absorb the extra work."
         )
 
-        risks.append({
-            "type": "SCOPE_CREEP",
-            "sprint_key": name,
-            "issue_keys": [a["key"] for a in added] + [h["key"] for h in hiked],
-            "baseline_sp": baseline_sp,
-            "current_sp": current_sp,
-            "growth_percent": round(growth, 1),
-            "added_issues": added,
-            "story_point_hikes": hiked,
-            "late_baseline": bool(baseline.get("late_capture")),
-            "risk_score": score,
-            "raw_score": round(raw, 1),
-            "confidence": 60 if baseline.get("late_capture") else 75,
-            "severity": bucket_severity(score),
-            "recommendation": " ".join(parts),
-        })
+        risks.append(self._emit(
+            "SCOPE_CREEP",
+            raw, confidence,
+            " ".join(parts),
+            # Unplanned work absorbed mid-sprint is always a red flag, even +1 SP:
+            # floor the displayed score so severity lands in CRITICAL.
+            score_floor=settings.scope_creep_floor_score,
+            sprint_key=name,
+            issue_keys=[a["key"] for a in added] + [h["key"] for h in hiked],
+            baseline_sp=baseline_sp,
+            current_sp=current_sp,
+            growth_percent=round(growth, 1),
+            added_issues=added,
+            story_point_hikes=hiked,
+            late_baseline=bool(baseline.get("late_capture")),
+        ))
 
         return risks
 
@@ -759,22 +816,17 @@ class RiskEngine:
                 f"Jira even though all {total_sp:.0f} SP are Done. Close the sprint to "
                 f"keep reporting clean."
             )
-        score = cap_score(raw)
-
-        risks.append({
-            "type": "SPRINT_ENDED_INCOMPLETE",
-            "sprint_key": sprint.get("name"),
-            "issue_keys": [i.get("key") for i in issues if not is_done(i.get("status"))],
-            "total_sp": total_sp,
-            "completed_sp": completed_sp,
-            "remaining_sp": remaining_sp,
-            "days_overdue": days_overdue,
-            "risk_score": score,
-            "raw_score": round(raw, 1),
-            "confidence": 90,
-            "severity": bucket_severity(score),
-            "recommendation": recommendation,
-        })
+        risks.append(self._emit(
+            "SPRINT_ENDED_INCOMPLETE",
+            raw, 90,
+            recommendation,
+            sprint_key=sprint.get("name"),
+            issue_keys=[i.get("key") for i in issues if not is_done(i.get("status"))],
+            total_sp=total_sp,
+            completed_sp=completed_sp,
+            remaining_sp=remaining_sp,
+            days_overdue=days_overdue,
+        ))
         return risks
 
     # ------------------------------------------------------------------ #
