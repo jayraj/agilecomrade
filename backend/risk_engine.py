@@ -1,8 +1,9 @@
-"""v2 risk engine implementing the Sprint Risk Scoring Rubric v2.
+"""Risk engine implementing the Sprint Risk Scoring Rubric v3 (ISO 31005).
 
-All triggers remain the same as v1; only scoring changed. Each risk emits a
-capped `risk_score` (for UI/severity) and an uncapped `raw_score` (for
-sprint-to-sprint and ticket-to-ticket ranking/triage).
+Triggers are unchanged; scoring is a 5x5 Probability x Impact matrix (see
+risk_matrix.py). Each risk emits `risk_score` (0-100, for UI/severity) and
+`raw_score` (the continuous projection, for ranking/triage), plus its
+`probability` / `impact` / `matrix_value` for explainability.
 """
 import logging
 from datetime import date, timezone
@@ -27,7 +28,6 @@ from risk_components import (
     assignee_factor,
     avg_sprint_sp,
     bucket_severity,
-    cap_score,
     days_remaining,
     hours_since,
     is_blocking_map,
@@ -35,14 +35,19 @@ from risk_components import (
     is_qa_status,
     now_utc,
     size_weight,
-    time_pressure_multiplier,
     to_utc,
     trend_factor,
     workflow_stage_weight,
 )
 from risk_matrix import (
+    bug_i,
+    bug_p,
     burndown_i,
     burndown_p,
+    due_date_i,
+    due_date_p,
+    external_dep_i,
+    external_dep_p,
     qa_i,
     qa_p,
     scope_creep_i,
@@ -52,6 +57,8 @@ from risk_matrix import (
     sprint_ended_p,
     sprint_not_started_i,
     sprint_not_started_p,
+    story_stalled_i,
+    story_stalled_p,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -60,41 +67,6 @@ logger = logging.getLogger(__name__)
 EXTERNAL_KEYWORDS = ["vendor", "third-party", "third party", "procurement", "external", "credentials"]
 INTERNAL_KEYWORDS = ["another team", "other team", "internal", "platform team", "another squad", "squad"]
 TRIGGER_KEYWORDS = ["blocked by", "depends on", "waiting for", "external", "vendor", "third-party"]
-
-DEPENDENCY_BASE = {
-    "external": settings.dependency_external_base,
-    "internal": settings.dependency_internal_base,
-    "default": settings.dependency_default_base,
-}
-
-# Risk scoring runs through two tails that share `_emit`:
-#
-#   5x5 matrix (sprint-level detectors, see risk_matrix.py):
-#       matrix_value = P × I                       # 1..25
-#       risk_score = project_matrix(matrix_value)   # band-aligned 0..100
-#       severity = matrix band of (P × I)
-#
-#   legacy product (ticket-level detectors, being migrated in phase 2):
-#       raw_score = base × ∏(named multipliers)     # uncapped, for triage
-#       risk_score = min(100, round(raw_score))
-#       severity = bucket_severity(risk_score)
-#
-# RISK_RECIPES is the single source of truth for WHICH multipliers apply to
-# WHICH risk type in the legacy product tail. A detector is built by the
-# generic `_apply_recipe`, which multiplies in each named factor (missing
-# entries default to a neutral 1.0). Risk types that do not use the multiplier
-# model (BUG_RAISED band model, DUE_DATE's max-aggregate) list an empty recipe.
-RISK_RECIPES = {
-    "STORY_NOT_PROGRESSING": ("stage", "assignee", "size"),
-    "SPRINT_NOT_STARTED": ("pressure",),
-    "BURNDOWN_BEHIND": ("trend", "pressure"),
-    "QA_BOTTLENECK": ("pressure",),
-    "EXTERNAL_DEPENDENCY": ("fan_out", "size"),
-    "DUE_DATE_PASSED": ("stage", "size", "blocking"),  # per-ticket; the sprint risk maxes them
-    "BUG_RAISED": (),  # band model - the base IS the score
-    "SCOPE_CREEP": ("pressure",),  # + score_floor applied by the detector
-    "SPRINT_ENDED_INCOMPLETE": (),  # additive formula - the base IS the score
-}
 
 
 class RiskEngine:
@@ -155,58 +127,33 @@ class RiskEngine:
     # ------------------------------------------------------------------ #
     # Generic scoring helpers (shared by every detector)
     # ------------------------------------------------------------------ #
-    @staticmethod
-    def _apply_recipe(base, recipe, values):
-        """Multiply `base` by each named multiplier in `recipe`.
+    def _emit(self, risk_type, confidence, recommendation, probability, impact,
+              score_floor=None, **extras):
+        """Build the common risk payload for any detector from its (P, I) pair.
 
-        Each name is looked up in `values` (a dict the detector builds with the
-        exact factors it computed); a missing key defaults to a neutral 1.0 so a
-        detector can legitimately omit factors that don't apply to a given ticket.
-        Returns the uncapped `base` product — the shared scoring tail (_emit)
-        caps and buckets it.
+        Every detector scores through the shared 5x5 matrix: `matrix_value = P x I`,
+        `risk_score = project_matrix(matrix_value)`, severity = matrix band.
+        `score_floor` is re-bucketed after it is applied so a floor can only ever
+        raise severity (the SCOPE_CREEP product rule). Detectors only supply their
+        P/I, confidence, recommendation, and type-specific diagnostics.
         """
-        for name in recipe:
-            factor = values.get(name, 1.0)
-            base *= factor if factor is not None else 1.0
-        return base
-
-    def _emit(self, risk_type, raw, confidence, recommendation, score_floor=None,
-              probability=None, impact=None, **extras):
-        """Build the common risk payload for any detector.
-
-        Two scoring tails share this one builder:
-          - 5x5 matrix (probability/impact supplied): score from the P x I block.
-          - legacy product (otherwise): score from the uncapped `raw` product.
-
-        Both cap/bucket exactly once here, and `score_floor` is re-bucketed
-        after it is applied so a floor can only ever raise severity. Detectors
-        only supply their score inputs, confidence, recommendation, and
-        type-specific diagnostics.
-        """
-        matrix = probability is not None and impact is not None
-        if matrix:
-            block = score_from_matrix(probability, impact)
-            score = block["risk_score"]
-            raw = block["raw_score"]
-            severity = block["severity"]
-        else:
-            score = cap_score(raw)
-            severity = bucket_severity(score)
+        block = score_from_matrix(probability, impact)
+        score = block["risk_score"]
+        severity = block["severity"]
         if score_floor is not None:
             score = max(score, score_floor)
             severity = bucket_severity(score)
         risk = {
             "type": risk_type,
             "risk_score": score,
-            "raw_score": round(raw, 1),
+            "raw_score": round(block["raw_score"], 1),
             "confidence": confidence,
             "severity": severity,
             "recommendation": recommendation,
+            "probability": block["probability"],
+            "impact": block["impact"],
+            "matrix_value": block["matrix_value"],
         }
-        if matrix:
-            risk["probability"] = block["probability"]
-            risk["impact"] = block["impact"]
-            risk["matrix_value"] = block["matrix_value"]
         risk.update(extras)
         return risk
 
@@ -223,6 +170,7 @@ class RiskEngine:
         risks = []
         context = context or {}
         avg_sp = context.get("avg_sp", 0.0)
+        blocking_map = context.get("blocking_map") or is_blocking_map(issues)
         sprint_start = to_utc(sprint.get("startDate")) if sprint else None
 
         for issue in issues:
@@ -238,14 +186,18 @@ class RiskEngine:
             if h <= STALE_HOURS:
                 continue
 
-            raw, detail = self._stalled_ticket_score(h, issue, issues, avg_sp)
+            probability, impact, detail = self._stalled_ticket_matrix(
+                h, issue, issues, avg_sp, blocking_map
+            )
             risks.append(self._emit(
                 "STORY_NOT_PROGRESSING",
-                raw, 85,
+                85,
                 (
                     f"Story '{key}' has no updates in {int(h)}h. "
                     f"Check with {issue.get('assignee')} for blockers."
                 ),
+                probability=probability,
+                impact=impact,
                 issue_key=key,
                 summary=issue.get("summary"),
                 assignee=issue.get("assignee"),
@@ -300,7 +252,7 @@ class RiskEngine:
 
         return [self._emit(
             "SPRINT_NOT_STARTED",
-            None, 90,
+            90,
             (
                 f"Sprint '{sprint.get('name')}' started {days_elapsed}d ago but "
                 f"0 of {len(open_issues)} tickets are In Progress (all To Do). "
@@ -314,23 +266,21 @@ class RiskEngine:
             open_count=len(open_issues),
         )]
 
-    def _stalled_ticket_score(self, h, issue, issues, avg_sp):
-        """Per-ticket stalled formula (used by STORY_NOT_PROGRESSING).
+    def _stalled_ticket_matrix(self, h, issue, issues, avg_sp, blocking_map):
+        """Per-ticket stalled P/I (used by STORY_NOT_PROGRESSING).
 
         `h` is the sprint-clamped hours-since-last-update computed by the
-        detector so pre-sprint silence never inflates the score.
+        detector so pre-sprint silence never inflates the probability.
         """
-        base = min(settings.stalled_base_cap, h / 2.0)
-        factors = {
-            "stage": workflow_stage_weight(issue.get("status")),
-            "assignee": assignee_factor(issues, issue.get("assignee")),
-            "size": size_weight(issue.get("story_points") or 0, avg_sp),
-        }
-        raw = self._apply_recipe(base, RISK_RECIPES["STORY_NOT_PROGRESSING"], factors)
-        return raw, {
-            "stage_weight": factors["stage"],
-            "assignee_factor": factors["assignee"],
-            "size_weight": round(factors["size"], 3),
+        probability = story_stalled_p(h)
+        impact = story_stalled_i(
+            issue.get("story_points") or 0,
+            issue.get("key") in blocking_map,
+        )
+        return probability, impact, {
+            "stage_weight": workflow_stage_weight(issue.get("status")),
+            "assignee_factor": assignee_factor(issues, issue.get("assignee")),
+            "size_weight": round(size_weight(issue.get("story_points") or 0, avg_sp), 3),
         }
 
     # ------------------------------------------------------------------ #
@@ -417,7 +367,7 @@ class RiskEngine:
 
         risks.append(self._emit(
             "BURNDOWN_BEHIND",
-            None, 90,
+            90,
             (
                 f"Burndown {burndown_gap:.1f}% behind. Need to complete "
                 f"{data['remaining_sp']:.0f} SP in {data['days_remaining']} days."
@@ -471,7 +421,7 @@ class RiskEngine:
 
         risks.append(self._emit(
             "QA_BOTTLENECK",
-            None, 80,
+            80,
             (
                 f"{qa_queue_count} stories in QA Review. Consider adding QA "
                 f"resource or running parallel testing."
@@ -506,30 +456,30 @@ class RiskEngine:
                 continue
 
             if any(k in description for k in EXTERNAL_KEYWORDS):
-                dep_base = DEPENDENCY_BASE["external"]
+                dep_kind = "external"
             elif any(k in description for k in INTERNAL_KEYWORDS):
-                dep_base = DEPENDENCY_BASE["internal"]
+                dep_kind = "internal"
             else:
-                dep_base = DEPENDENCY_BASE["default"]
+                dep_kind = "default"
 
-            factors = {
-                "fan_out": settings.fan_out_factor if issue.get("key") in blocking_map else 1.0,
-                "size": size_weight(issue.get("story_points") or 0, avg_sp),
-            }
-            raw = self._apply_recipe(dep_base, RISK_RECIPES["EXTERNAL_DEPENDENCY"], factors)
+            blocks_others = issue.get("key") in blocking_map
+            probability = external_dep_p(dep_kind)
+            impact = external_dep_i(issue.get("story_points") or 0, blocks_others)
 
             risks.append(self._emit(
                 "EXTERNAL_DEPENDENCY",
-                raw, 75,
+                75,
                 (
                     f"Story '{issue['key']}' has external dependency. "
                     f"Verify status and escalate if blocked."
                 ),
+                probability=probability,
+                impact=impact,
                 issue_key=issue["key"],
                 summary=issue.get("summary"),
                 dependency_detail=issue.get("blocked_by", "External dependency mentioned in description"),
-                dependency_base=dep_base,
-                fan_out=factors["fan_out"],
+                dependency_kind=dep_kind,
+                fan_out=settings.fan_out_factor if blocks_others else 1.0,
             ))
 
         return risks
@@ -560,13 +510,10 @@ class RiskEngine:
                 continue
 
             days_overdue = (today - due).days
-            base = min(settings.due_date_base_cap, days_overdue * settings.due_date_base_per_day)
-            factors = {
-                "stage": workflow_stage_weight(issue.get("status")),
-                "size": size_weight(issue.get("story_points") or 0, avg_sp),
-                "blocking": settings.blocking_factor if issue.get("key") in blocking_map else 1.0,
-            }
-            raw = self._apply_recipe(base, RISK_RECIPES["DUE_DATE_PASSED"], factors)
+            probability = due_date_p(days_overdue)
+            impact = due_date_i(issue.get("story_points") or 0)
+            block = score_from_matrix(probability, impact)
+            is_blocking = issue.get("key") in blocking_map
 
             overdue.append({
                 "key": issue["key"],
@@ -574,25 +521,30 @@ class RiskEngine:
                 "due_date": due_date,
                 "assignee": issue.get("assignee"),
                 "days_overdue": days_overdue,
-                "stage_weight": factors["stage"],
-                "size_weight": round(factors["size"], 3),
-                "is_blocking": issue.get("key") in blocking_map,
-                "raw_score": round(raw, 1),
-                "risk_score": cap_score(raw),
+                "stage_weight": workflow_stage_weight(issue.get("status")),
+                "size_weight": round(size_weight(issue.get("story_points") or 0, avg_sp), 3),
+                "is_blocking": is_blocking,
+                "probability": block["probability"],
+                "impact": block["impact"],
+                "matrix_value": block["matrix_value"],
+                "raw_score": block["raw_score"],
+                "risk_score": block["risk_score"],
             })
 
         if not overdue:
             return risks
 
-        raw = max(o["raw_score"] for o in overdue)
+        worst = max(overdue, key=lambda o: o["matrix_value"])
 
         risks.append(self._emit(
             "DUE_DATE_PASSED",
-            raw, 85,
+            85,
             (
                 f"{len(overdue)} ticket(s) are past their due date. "
                 f"Escalate immediately and reassign to unblock delivery."
             ),
+            probability=worst["probability"],
+            impact=worst["impact"],
             sprint_key=sprint.get("name") if sprint else None,
             issue_keys=[o["key"] for o in overdue],
             overdue_issues=overdue,
@@ -611,9 +563,9 @@ class RiskEngine:
         comparison is the ISD discriminator (defect injected by this sprint,
         not backlog debt pulled in).
 
-        Scoring follows the defect quality-risk band model: each bug's tier
-        (P1-P4, derived from its Jira priority) maps to a score band, and the
-        position within the band ramps with age across the sprint duration.
+        Scoring follows the defect quality-risk band model mapped onto the P x I
+        matrix: a bug's tier (P1-P4, from its Jira priority) sets impact, and
+        whether it's open, fixed, or a production escape sets probability.
         Fixed P1s stay visible at a lower band; fixed P2+ drop out. A P1
         labeled as a production escape scores the maximum.
         """
@@ -649,17 +601,20 @@ class RiskEngine:
                 continue  # sprint ended and defect contained - no active risk
 
             days_old = max(0.0, (now - created).total_seconds() / 86400)
+            age_fraction = min(1.0, days_old / sprint_days) if sprint_days else 0.0
             if escaped:
                 band_name = "P1_escaped"
-                raw = float(settings.bug_p1_escaped_score)
             else:
                 if tier == "P1":
                     band_name = "P1_fixed" if done else "P1_open"
                 else:
                     band_name = tier
-                low, high = settings.bug_tier_bands[band_name]
-                frac = min(1.0, days_old / sprint_days) if sprint_days else 0.0
-                raw = low + (high - low) * frac
+
+            probability = bug_p(tier, done, age_fraction, escaped)
+            impact = bug_i(tier)
+            if escaped:
+                impact = 5
+
 
             if escaped:
                 recommendation = (
@@ -688,8 +643,10 @@ class RiskEngine:
 
             risks.append(self._emit(
                 "BUG_RAISED",
-                raw, 80,
+                80,
                 recommendation,
+                probability=probability,
+                impact=impact,
                 sprint_key=sprint.get("name") if sprint else None,
                 issue_key=issue.get("key"),
                 issue_keys=[issue.get("key")],
@@ -779,7 +736,7 @@ class RiskEngine:
 
         risks.append(self._emit(
             "SCOPE_CREEP",
-            None, confidence,
+            confidence,
             " ".join(parts),
             # Unplanned work absorbed mid-sprint is always a red flag, even +1 SP:
             # floor the displayed score so severity lands in CRITICAL.
@@ -855,7 +812,7 @@ class RiskEngine:
         impact = sprint_ended_i(remaining_sp, total_sp)
         risks.append(self._emit(
             "SPRINT_ENDED_INCOMPLETE",
-            None, 90,
+            90,
             recommendation,
             probability=probability,
             impact=impact,

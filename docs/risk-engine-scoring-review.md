@@ -5,15 +5,14 @@ A deep-dive into how the risk engine (`backend/risk_engine.py`, `backend/risk_co
 rule is pinned by the worked examples in `backend/validate_rubric.py` (`python3 validate_rubric.py`).
 
 > **Key mental model:** every risk emits two numbers — `risk_score` (0–100, drives the UI gauge and
-> severity) and `raw_score` (on the same 0–100 scale, used for sprint-to-sprint and ticket-to-ticket
-> triage). All detectors keep the same *triggers* as v1; only the scoring changed.
+> severity) and `raw_score` (the continuous projection, for ranking/triage) — plus its `probability`,
+> `impact` and `matrix_value` for explainability. All detectors keep the same *triggers* as v1; only
+> the scoring changed.
 >
-> The engine currently runs **two scoring tails** through one shared emitter (`_emit`):
->
-> - **5×5 Probability × Impact matrix** (ISO 31005) — the standard model. All five **sprint-level**
->   detectors use it (see §2.9 and `backend/risk_matrix.py`).
-> - **Legacy product model** (`base × ∏multipliers`) — the four **ticket-level** detectors still use
->   it; it is being migrated to the matrix in phase 2.
+> **The engine runs one model: a standard 5×5 Probability × Impact matrix (ISO 31005 style).** Every
+> detector — sprint-level and ticket-level — derives an ordinal `P` and `I` from telemetry and scores
+> `P × I`. The old `base × ∏multipliers` product model and the defect band model have both been
+> retired. See §2.9 and `backend/risk_matrix.py` for the model and the per-detector ladders.
 
 ---
 
@@ -35,17 +34,21 @@ it is logged and skipped while the rest still run, so a single rule can never bl
 | 7 | `detect_scope_creep` | `SCOPE_CREEP` | sprint |
 | 8 | `detect_sprint_overdue_risk` | `SPRINT_ENDED_INCOMPLETE` | sprint |
 
-Risks come back sorted by `raw_score` descending, so the worst (uncapped) driver is always first.
-The resolved list is enriched by `risk_explainer.py` (signal → suspected cause → suggested action,
-plus a `severity_reason` sentence and a stable `risk_id`) and assembled into the snapshot by
-`snapshot.py`.
+Risks come back sorted by `raw_score` descending, so the most severe (highest-projected) risk is always
+first. The resolved list is enriched by `risk_explainer.py` (signal → suspected cause → suggested
+action, plus a `P×I` `severity_reason` sentence and a stable `risk_id`) and assembled into the snapshot
+by `snapshot.py`.
 
 ---
 
 ## 2. Shared scoring components
 
 Every detector leans on the same table-driven helpers in `risk_components.py`, all tunable from
-`config.py`. These are the building blocks whose products appear throughout §3.
+`config.py`. **Current role after the matrix migration:** `trend_factor` is the only one still on the
+scoring path (it feeds `BURNDOWN_BEHIND`'s probability via a ±1 nudge, §2.9). `workflow_stage_weight`,
+`size_weight` and `assignee_factor` are retained as *diagnostic* fields on the risk payload (and the
+matrix's ticket-impact size ladder is a separate ordinal table, §2.9). `time_pressure_multiplier` is
+retained only because the rubric asserts its curve; no detector multiplies by it anymore.
 
 ### 2.1 Time-pressure multiplier (`time_pressure_multiplier`, risk_components.py:81)
 The same magnitude of risk is worse the closer the sprint is to its end. It is a step function of
@@ -102,9 +105,10 @@ as a mature one:
 | shrinking slowly | **1.0** |
 | flat / widening / insufficient history | **1.3** |
 
-### 2.6 Score capping & severity (`cap_score` / `bucket_severity`, risk_components.py:156)
+### 2.6 Severity bands (`bucket_severity`, risk_components.py)
+
 ```
-risk_score = min(100, round(raw_score))
+risk_score → severity
 ```
 
 | risk_score | Severity |
@@ -116,172 +120,102 @@ risk_score = min(100, round(raw_score))
 
 The frontend mirrors these exact bands in `frontend/src/utils/format.ts`:
 `severityFromScore` (format.ts:26) and `getRiskColor` (format.ts:15) → CRITICAL `#ef4444`,
-HIGH `#d97706`, MEDIUM `#f59e0b`, LOW `#10b981`.
+HIGH `#d97706`, MEDIUM `#f59e0b`, LOW `#10b981`. The matrix projection (§2.9) is built so that
+`bucket_severity(project_matrix(P×I))` always equals the matrix band — the bands above therefore *are*
+the ISO bands, with no second source of truth.
 
 ---
 
 ## 2.7 Common framework vs detector-specific logic
 
-All nine detectors share one **scoring framework**, but each supplies its own **base signal** and a
-different **mix of the shared multiplier tables** from §2. Two detectors deliberately break out of
-the `base × multiplier` pattern entirely.
+All nine detectors share one **scoring framework** — the 5×5 matrix — but each supplies its own
+**base signal** expressed as an ordinal Probability × Impact pair. A detector never multiplies
+anything: it derives `P` and `I` and lets the shared emitter (§2.8) project and bucket.
 
 ### 2.7.1 The common pipeline
 
 ```
-detector-specific base signal (severity driver)
-        ×  the detector's chosen shared multipliers (time-pressure, stage, size, trend, …)
+detector telemetry → (P, I)  [1..5 each, via risk_matrix ladders]
         ─────────────────────────────────────────────────────────────
-raw_score  (uncapped — used for cross-sprint / cross-ticket triage, keeps the ranking honest)
-   │  cap_score: min(100, round(...))
+matrix_value = P × I                                    # 1..25
+   │  project_matrix: piecewise-linear, band-aligned to 0..100
    ▼
-risk_score (capped 0–100 — drives the UI gauge + severity)
-   │  bucket_severity
+risk_score (0–100 — drives the UI gauge + severity)
+   │  matrix_severity(matrix_value)  ≡  bucket_severity(risk_score)
    ▼
-LOW (<20) · MEDIUM (20–59) · HIGH (60–79) · CRITICAL (80+)
+LOW (1–4) · MEDIUM (5–9) · HIGH (10–14) · CRITICAL (15–25)
 ```
 
 ### 2.7.2 Which scoring model each detector uses
 
-Sprint-level detectors now use the **matrix** (§2.9); ticket-level detectors still use the
-**legacy product** (columns below) until phase 2.
+Every detector now uses the **matrix** (§2.9). The columns show the telemetry each detector's P and I
+now read (the old product-model multiplier columns are gone).
 
-| Detector / risk type | Model | Base signal (legacy severity driver) | Time-pressure | Stage | Size | Trend | Assignee | Fan-out / blocking |
-|---|:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| SPRINT_NOT_STARTED | **matrix** | `P`×`I` (elapsed, open_count) | | | | | | |
-| BURNDOWN_BEHIND | **matrix** | `P`×`I` (time left, trend, gap%) | | | | | | |
-| QA_BOTTLENECK | **matrix** | `P`×`I` (clear ratio, queue size) | | | | | | |
-| SCOPE_CREEP | **matrix** | `P`×`I` (growth%, adds/hikes) | | | | | | |
-| SPRINT_ENDED_INCOMPLETE | **matrix** | `P`×`I` (ended, unfinished share) | | | | | | |
-| STORY_NOT_PROGRESSING | legacy | `min(50, hours/2)` | | ● | ● | | ● | |
-| EXTERNAL_DEPENDENCY | legacy | constant `75/50/50` by keyword class | | | ● | | | ● (fan-out 1.3) |
-| DUE_DATE_PASSED | legacy | `min(70, days_overdue×15)` | | ● | ● | | | ● (blocking 1.3) |
-| BUG_RAISED | legacy | priority→tier band, age-interpolated | | | | | | |
+| Detector / risk type | Model | Probability reads | Impact reads |
+|---|:---:|---|---|
+| SPRINT_NOT_STARTED | matrix | sprint elapsed | open ticket count |
+| BURNDOWN_BEHIND | matrix | time left + gap trend | burndown gap % |
+| QA_BOTTLENECK | matrix | clear ratio | queue size (+stuck) |
+| SCOPE_CREEP | matrix | (creep happened → 5) | growth % (+adds/hikes) |
+| SPRINT_ENDED_INCOMPLETE | matrix | (sprint ended → 5) | unfinished share |
+| STORY_NOT_PROGRESSING | matrix | in-sprint silence hours | size (+blocking) |
+| EXTERNAL_DEPENDENCY | matrix | dependency class | size (+blocking) |
+| DUE_DATE_PASSED | matrix | days overdue | size |
+| BUG_RAISED | matrix | open/fixed/escaped + age | defect tier |
 
-### 2.7.3 The exceptions to the multiplier pattern
+### 2.7.3 Retired: the multiplier product model
 
-- **The matrix cohort** — all five sprint-level detectors (§2.9) now bypass `base × multiplier`
-  entirely and score via `P × I`. `SPRINT_ENDED_INCOMPLETE` is no longer an additive linear formula,
-  and `SCOPE_CREEP` is no longer `min(85, growth%) × time-pressure`.
-- **BUG_RAISED** (legacy) — a **band model**, not `base × multiplier`: the Jira priority maps to a
-  tier, each tier owns a score range (`P1_open` 80–90, `P1_fixed` 60–70, `P2` 30–50, `P3`/`P4` 10–20),
-  and the score is **linearly interpolated inside the band by defect age**. A prod-escaped P1
-  short-circuits to 100. (`RISK_RECIPES["BUG_RAISED"] = ()`).
-- **SCOPE_CREEP** (matrix) is a *hybrid*: the matrix gives the graded score, but the product rule
-  ("any confirmed creep is a red flag") still floors the displayed score at **80 / CRITICAL**
-  regardless of how small the growth was.
+The v2 engine scored each risk as `base × ∏(named multipliers)`, with per-detector bases, a
+`RISK_RECIPES` table, and a `_apply_recipe` helper. That whole tail is **removed**: all nine
+detectors now score through the shared matrix-only `_emit` (§2.9). The only surviving non-matrix
+behavior is `SCOPE_CREEP`'s product rule, which floors the displayed score at **80 / CRITICAL** after
+the projection so any confirmed creep stays red.
 
-> Both `raw_score` and `risk_score` are still emitted: for the legacy cohort the multiplier-heavy
-> rules can produce very different raw magnitudes, and for the matrix cohort `raw_score` is the
-> continuous 0–100 projection (kept uncapped/rounded for triage ranking). The risks list is sorted by
-> `raw_score` (risk_engine.py), keeping ranking comparable across both cohorts.
+> `raw_score` and `risk_score` are still both emitted for ranking continuity: for every matrix risk
+> `raw_score` is the continuous 0–100 projection (rounded to 1dp) and `risk_score` its rounded form, so
+> the risks list sorted by `raw_score` stays comparable across detectors.
 
 ### 2.7.4 How the framework lives in the code
 
-The multiplier matrix in §2.7.2 is now a first-class artifact in `risk_engine.py` — the module-level
-`RISK_RECIPES` table (risk_engine.py:70) maps every risk type to the ordered list of multiplier
-**names** that apply to it, and the shared pipeline (§2.8) consumes it. Updating "which multiplier a
-detector uses" is now a one-line table edit instead of editing a detector's math.
+The per-detector (P, I) mapping in §2.7.2 lives in two places: the ladders are named functions in
+`risk_matrix.py` (one per axis, one named table per detector — recalibrating a threshold is a one-line
+edit), and the shared emitter `_emit` in `risk_engine.py` is the single place a risk's `risk_score`,
+`raw_score`, and `severity` are computed. `validate_rubric.py` pins the numeric contract for every
+detector, and `tests/test_risk_matrix.py` pins the projection/ladder invariants.
 
 ---
 
-## 2.8 Implementation: original vs refactored (behavior-preserving)
+## 2.8 Implementation: the shared matrix emitter
 
-The scoring math in §3 is the contract and is **unchanged**. The original implementation inlined each
-detector's risk-dict tail (the same ~5 keys `risk_score` / `raw_score` / `confidence` / `severity` /
-`recommendation`) and multiplied each factor inline. A refactor collapsed that into one shared
-pipeline — `RISK_RECIPES` + `_apply_recipe` + `_emit` — with **no numeric change**. This section keeps
-both versions so the mapping stays auditable.
-
-### Original (pre-refactor) — inline product + per-detector dict tail
-
-Every multiplier-capable detector spelled out its full formula and then pasted a near-identical tail:
+Each detector now computes only its `(P, I)` pair (plus type-specific diagnostics) and calls the one
+shared emitter, which owns projection, flooring, and severity:
 
 ```python
-# STORY_NOT_PROGRESSING — original
-base = min(settings.stalled_base_cap, h / 2.0)
-stage = workflow_stage_weight(issue.get("status"))
-af = assignee_factor(issues, issue.get("assignee"))
-sw = size_weight(issue.get("story_points") or 0, avg_sp)
-raw = base * stage * af * sw
-score = cap_score(raw)
-risks.append({
-    "type": "STORY_NOT_PROGRESSING",
-    "issue_key": key, "summary": ..., "assignee": ..., "status": ..., "hours_since_update": ...,
-    "risk_score": score,
-    "raw_score": round(raw, 1),
-    "confidence": 85,
-    "severity": bucket_severity(score),
-    "recommendation": (...),
-    **detail,
-})
-```
-
-The 9 detectors duplicated this tail ~9–14 times (cap_score ×10, "risk_score" ×14, severity ×9).
-
-### Refactored — recipe-driven base signal + one shared emitter
-
-Now a detector only supplies its **base**, the **factors it actually computed**, and its **extras**;
-the recipe decides the multipliers and the tail is emitted once:
-
-```python
-# STORY_NOT_PROGRESSING — refactored
-base = min(settings.stalled_base_cap, h / 2.0)
-factors = {
-    "stage": workflow_stage_weight(issue.get("status")),
-    "assignee": assignee_factor(issues, issue.get("assignee")),
-    "size": size_weight(issue.get("story_points") or 0, avg_sp),
-}
-raw = self._apply_recipe(base, RISK_RECIPES["STORY_NOT_PROGRESSING"], factors)
-risks.append(self._emit("STORY_NOT_PROGRESSING", raw, 85, recommendation,
-                        issue_key=key, ..., **detail))
-```
-
-**The two helpers** (risk_engine.py:142 / risk_engine.py:156):
-
-```python
-def _apply_recipe(base, recipe, values):
-    """Multiply base by each named multiplier in `recipe`; missing factors ~ 1.0."""
-    for name in recipe:
-        base *= values.get(name, 1.0) or 1.0
-    return base
-
-def _emit(risk_type, raw, confidence, recommendation, score_floor=None, **extras):
-    """Single scoring tail: risk_score = min(100, round(raw)); bucket severity."""
-    score = max(cap_score(raw), score_floor) if score_floor is not None else cap_score(raw)
-    risk = {"type": ..., "risk_score": score, "raw_score": round(raw, 1),
-            "confidence": ..., "severity": bucket_severity(score), "recommendation": ...}
+def _emit(self, risk_type, confidence, recommendation, probability, impact,
+          score_floor=None, **extras):
+    """Build the common risk payload for any detector from its (P, I) pair."""
+    block = score_from_matrix(probability, impact)      # P×I -> matrix_value, project, band
+    score, severity = block["risk_score"], block["severity"]
+    if score_floor is not None:                          # SCOPE_CREEP product rule
+        score = max(score, score_floor)
+        severity = bucket_severity(score)
+    risk = {"type": risk_type, "risk_score": score, "raw_score": round(block["raw_score"], 1),
+            "confidence": confidence, "severity": severity, "recommendation": recommendation,
+            "probability": block["probability"], "impact": block["impact"],
+            "matrix_value": block["matrix_value"]}
     risk.update(extras)
     return risk
 ```
 
-**Why this preserves every number exactly:**
-
-- `cap_score` itself rounds (`risk_components.py:167` → `min(100, int(round(raw)))`), so the original
-  BUG_RAISED `cap_score(int(round(raw)))` is identical to `_emit`'s `cap_score(raw)` — every band
-  boundary lands the same. All other detectors already called `cap_score(raw)` directly.
-- `raw_score = round(raw, 1)` was identical across every original tail.
-- Empty recipes (`BUG_RAISED`, `SPRINT_ENDED_INCOMPLETE`) multiply nothing, so the band and additive
-  models pass through untouched.
-- `SCOPE_CREEP` dropped its explicit `score = max(cap_score(raw), floor)` into `_emit`'s
-  `score_floor` argument — same CRITICAL floor, same `raw_score`.
-
-**Per-risk mapping (original → refactored):**
-
-| Risk type | `RISK_RECIPES` | Factors fed to `_apply_recipe` | Extras in `_emit` (payload byte-identical) |
-|---|:---:|---|---|
-| STORY_NOT_PROGRESSING | `(stage, assignee, size)` | stage, assignee, size | issue_key, summary, assignee, status, hours_since_update, stage_weight, assignee_factor, size_weight |
-| SPRINT_NOT_STARTED | `(pressure,)` | pressure | sprint_key, summary, days_elapsed, open_count |
-| BURNDOWN_BEHIND | `(trend, pressure)` | trend, pressure | sprint_key, issue_keys, total_sp, completed_sp, weighted_completed_sp, remaining_sp, days_remaining, burndown_gap_percent |
-| QA_BOTTLENECK | `(pressure,)` | pressure | sprint_key, issue_keys, qa_stories_count, qa_throughput_per_day, backlog_clear_days, days_remaining, stuck_stories |
-| EXTERNAL_DEPENDENCY | `(fan_out, size)` | fan_out, size | issue_key, summary, dependency_detail, dependency_base, fan_out |
-| DUE_DATE_PASSED | `(stage, size, blocking)` | per-ticket stage, size, blocking | sprint_key, issue_keys, overdue_issues, count |
-| BUG_RAISED | `()` band model | — | sprint_key, issue_key, issue_keys, summary, assignee, status, priority, tier, band, days_since_created |
-| SCOPE_CREEP | `(pressure,)` | pressure (+ `score_floor`) | sprint_key, issue_keys, baseline_sp, current_sp, growth_percent, added_issues, story_point_hikes, late_baseline |
-| SPRINT_ENDED_INCOMPLETE | `()` additive | — | sprint_key, issue_keys, total_sp, completed_sp, remaining_sp, days_overdue |
-
-**Dead code removed in the refactor:** `config.py`'s `stalled_base_per_2h = 1.0` (was line 75) was
-never read — `_stalled_ticket_score` always hardcoded `h / 2.0`. It is gone; no behavior change.
+**Historical (retired): the v2 product model.** Before the matrix, every risk was
+`base × ∏multipliers` with per-detector bases, a module-level `RISK_RECIPES` table and an
+`_apply_recipe` helper, capped by `cap_score`; `BUG_RAISED` used a tier-band model and
+`SPRINT_ENDED_INCOMPLETE` an additive formula. That entire tail — `RISK_RECIPES`, `_apply_recipe`,
+`cap_score`'s role on the scoring path, and every legacy scoring constant in `config.py`
+(`dependency_*_base`, `due_date_base_*`, `stalled_base_cap`, `bug_tier_bands`, `bug_p1_escaped_score`,
+`blocking_factor`, `qa_backlog_cap`, `burndown_gap_cap`, `no_progress_*`) — was removed during the
+matrix migration. Only the rubric assertions on `time_pressure_multiplier` and `scope_creep_cap` still
+exercise the old helper/constants, so those two are retained.
 
 ---
 
@@ -333,7 +267,7 @@ Here the model *derives* them from telemetry — an automated proxy for expert j
 replacement for it. Every ladder is an explicit ordered threshold table, so calibration is auditable
 (`tests/test_risk_matrix.py`).
 
-**Per-detector ladders (sprint-level).** Probability ladders ask "will it bite in time?"; impact
+**Per-detector ladders — sprint-level.** Probability ladders ask "will it bite in time?"; impact
 ladders ask "how much exposure if it does?":
 
 | Detector | Probability P | Impact I |
@@ -342,42 +276,57 @@ ladders ask "how much exposure if it does?":
 | `BURNDOWN_BEHIND` | `days_left/duration` (≥50%→2, ≥25%→3, ≥10%→4, else 5), ±1 by gap trend | gap%: ≤15→2, ≤30→3, ≤50→4, else 5 |
 | `QA_BOTTLENECK` | `clear_days/days_left`: ≤0.5→1, ≤1→2, ≤1.5→3, ≤2.5→4, else 5 | queue size: ≤2→2, ≤4→3, ≤7→4, else 5; +1 if any story stuck >24h |
 | `SCOPE_CREEP` | 5 (creep has already happened) | growth%: ≤10→2, ≤25→3, ≤50→4, else 5; ≥3 if work added/re-estimated |
-| `SPRINT_ENDED_INCOMPLETE` | 5 (sprint already ended) | unfinished share of sprint: ≤10%→2, ≤25%→3, ≤50%→4, else 5; all-Done→1 |
+| `SPRINT_ENDED_INCOMPLETE` | 5 (sprint already ended) | unfinished share of sprint: ≤10%→2, ≤25→3, ≤50→4, else 5; all-Done→1 |
+
+**Per-detector ladders — ticket-level.** A shared size ladder drives impact (`≤1→2, ≤3→3, ≤5→4,
+else 5`), bumped one step when the ticket blocks other work; the probability ladder encodes "will it
+bite?":
+
+| Detector | Probability P | Impact I |
+|---|---|---|
+| `STORY_NOT_PROGRESSING` | in-sprint silence `h`: ≥168h→5, ≥96h→4, ≥48h→3, else 2 | size (+1 if blocking) |
+| `EXTERNAL_DEPENDENCY` | external→4, internal/unknown→3 | size (+1 if it blocks others) |
+| `DUE_DATE_PASSED` | days overdue: ≥7→5, ≥3→4, ≥1→3 | size |
+| `BUG_RAISED` | prod-escaped P1→5; open P1→3 (→4 past half-sprint age); fixed P1→2; other tiers→2 | tier: P1→5, P2→4, P3→3, P4→2 |
+
+`STORY_NOT_PROGRESSING` P uses the **sprint-clamped** `h`, so pre-sprint silence never inflates it.
+`DUE_DATE_PASSED` emits one aggregate risk carrying the **worst** ticket's P/I (max `matrix_value`).
+`BUG_RAISED` impact is the defect tier, so a prod-escaped P1 is always `5 × 5 = 25 → CRITICAL`.
 
 `SCOPE_CREEP` keeps its product rule ("any confirmed creep is a red flag") as a floor: after the matrix
 projection, the displayed score is floored at **80 / CRITICAL** (`scope_creep_floor_score`), so even a
 +1 SP addition is never silently green.
 
-**Migration safety.** `_emit` takes optional `probability`/`impact`. When present it scores via the
-matrix; when absent it uses the legacy `base × ∏multipliers` path. This lets matrix-scored
-(sprint-level) and legacy (ticket-level) detectors coexist safely through phase 2. `risk_explainer`
-renders the `P×I` chips and a matrix `severity_reason` when present, and falls back to the
-`raw → score` text otherwise, so both cohorts display correctly.
+**Migration status: complete.** All nine detectors score through the shared matrix-only `_emit`, which
+takes `(P, I)`, computes `P × I`, and applies the band-aligned projection. The old product model
+(`RISK_RECIPES`, `_apply_recipe`, the per-detector bases and every legacy multiplier constant) has been
+removed; `config.py` no longer carries the dead scoring knobs. `risk_explainer` renders the `P×I` chips
+and matrix `severity_reason` for every risk.
 
 ---
 
 ## 3. Detector-by-detector formulas
 
-### 3.1 STORY_NOT_PROGRESSING (ticket-level) — risk_engine.py:182
+### 3.1 STORY_NOT_PROGRESSING (ticket-level) — risk_engine.py:224
 **Detector.** Flags tickets that went *quiet during the current sprint*. Staleness is measured from
 `max(last update, sprint start)` so pre-sprint silence (backlog tickets pulled in) never inflates the
 score — only in-sprint inactivity counts.
 
 **Trigger.** Not Done AND `hours_since(max(updated, sprint_start)) > 24` (STALE_HOURS).
 
-**Formula** (`_stalled_ticket_score`, risk_engine.py:283):
+**Formula** (matrix, §2.9):
 
 ```
-base  = min(50, hours_silent / 2)          # 1 idle-hour → +0.5, capped 50
-stage = workflow_stage_weight(status)      # §2.2
-af    = assignee_factor(issues, assignee)  # §2.4 (1.4 / 1.0)
-sw    = size_weight(sp, avg_sp)            # §2.3
+P = story_stalled_p(h)                      # in-sprint silence: ≥168h→5, ≥96h→4, ≥48h→3, else 2
+I = story_stalled_i(sp, blocks_others)      # size ladder, +1 if it blocks other work
 
-raw_score = base * stage * af * sw
+matrix_value = P × I
+risk_score   = project_matrix(matrix_value)
 ```
 
-`confidence: 85`. Worked examples (validate_rubric.py:412):
-- Ticket stale since before a 5-day sprint that started 30h ago → clamped to ~30h silence, fires.
+`confidence: 85`. Worked examples (validate_rubric.py:419):
+- Ticket stale since before a 5-day sprint that started 30h ago → clamped to ~30h silence (`P=2`),
+  fires.
 - Mid-sprint ticket updated 10h ago → stays silent (no risk).
 - The same stale ticket in a week-old sprint (more in-sprint silence) scores strictly higher.
 
@@ -470,57 +419,50 @@ Note `P` is the *clear ratio*: a queue that clears comfortably **before** the sp
   `matrix = 6` → **30 MEDIUM**.
 - Same queue, 1 day left: `clear_ratio = 2/1` → `P=4`, `I=3`, `matrix = 12` → **70 HIGH**.
 
-### 3.5 EXTERNAL_DEPENDENCY (ticket-level) — risk_engine.py:457
+### 3.5 EXTERNAL_DEPENDENCY (ticket-level) — risk_engine.py:475
 **Detector.** Keyword scan of the free-text description for dependency language. Not Done required.
+The keyword class is retained as a probability input:
+- **external** (`vendor`, `third-party`, `procurement`, `external`, `credentials`) → `P=4` (Likely;
+  least controllable)
+- **internal** (`another team`, `internal`, `platform team`, `another squad`, `squad`) → `P=3`
+- **default** (either/both keywords) → `P=3`
 
-**Base score by dependency class** (risk_engine.py:51, config.py:70):
-- **external** (`vendor`, `third-party`, `procurement`, `external`, `credentials`) → base **75**
-- **internal** (`another team`, `internal`, `platform team`, `another squad`, `squad`) → base **50**
-- **default** (either/both keywords) → base **50**
-
-**Formula:**
+**Formula** (matrix, §2.9):
 
 ```
-fan_out = 1.3 if this ticket blocks other tickets (blocking_map) else 1.0
-sw      = size_weight(sp, avg_sp)           # §2.3
+P = external_dep_p(kind)                    # external→4, internal/default→3
+I = external_dep_i(sp, blocks_others)       # size ladder, +1 if it blocks other tickets
 
-raw_score = dependency_base * fan_out * sw
+matrix_value = P × I
+risk_score   = project_matrix(matrix_value)
 ```
 
-`confidence: 75`. Worked examples (validate_rubric.py:248):
-- External vendor, blocks 2 tickets (fan-out 1.3), 5 SP (size 1.0) →
-  `75 × 1.3 × 1.0 = 97.5` → **98 CRITICAL** (validator accepts 97 under tolerance).
-- Internal "Platform team" dependency, nothing blocked, 2 SP vs avg 5 (size 0.82) →
-  `50 × 1.0 × 0.82 = 41` → **41 MEDIUM**.
+`confidence: 75`. Worked examples (validate_rubric.py:254):
+- External vendor, blocks 2 tickets, 5 SP: `P=4`, `I=4+1(blocking)=5`, `matrix = 20` → **90 CRITICAL**.
+- Internal "Platform team" dependency, nothing blocked, 2 SP: `P=3`, `I=3`, `matrix = 9` → **59 MEDIUM**.
 
-### 3.6 DUE_DATE_PASSED (sprint-level, max-of-tickets) — risk_engine.py:502
+### 3.6 DUE_DATE_PASSED (sprint-level, max-of-tickets) — risk_engine.py:519
 **Detector.** Collects tickets with a due date strictly before *today's calendar date in the user's
 Jira timezone* (so "overdue" matches what the user sees in Jira even if the server runs in UTC).
 
-**Per-ticket formula:**
+**Per-ticket formula** (matrix, §2.9):
 
 ```
-base     = min(70, days_overdue * 15)       # 15/day, capped 70
-stage    = workflow_stage_weight(status)    # §2.2
-sw       = size_weight(sp, avg_sp)          # §2.3
-blocking = 1.3 if this ticket blocks others else 1.0
+P = due_date_p(days_overdue)               # ≥7→5, ≥3→4, ≥1→3
+I = due_date_i(sp)                          # size ladder only (lateness is captured by P)
 
-ticket_raw = base * stage * sw * blocking
+matrix_value = P × I
 ```
 
-**Aggregation:** the sprint-level risk takes the **maximum** per-ticket raw score, then caps:
-
-```
-raw_score  = max(ticket_raw over all overdue tickets)
-risk_score = min(100, round(raw_score))
-```
+**Aggregation:** the single sprint-level risk carries the **worst** ticket's P/I (the max
+`matrix_value` over all overdue tickets), and each ticket in `overdue_issues` keeps its own P/I and
+projected score for the detail view.
 
 `confidence: 85`. Worked examples (validate_rubric.py:112):
-- PFIN-10, 1 day overdue, Code Review (1.1), 5 SP (size 1.0), blocks 1 (1.3):
-  `min(70,15) × 1.1 × 1.0 × 1.3 = 15 × 1.43 = 21.45` → **21** (LOW–MEDIUM boundary).
-- 4 days overdue, QA (1.3), blocks 2 (1.3): `min(70,60) × 1.3 × 1.0 × 1.3 = 101.4` → **100 HIGH**.
+- PFIN-10, 1 day overdue, 5 SP: `P=3`, `I=4`, `matrix = 12` → **70 HIGH**.
+- 4 days overdue, 5 SP: `P=4`, `I=4`, `matrix = 16` → **82 CRITICAL**.
 
-### 3.7 BUG_RAISED (ticket-level, in-sprint defect) — risk_engine.py:569
+### 3.7 BUG_RAISED (ticket-level, in-sprint defect) — risk_engine.py:586
 **Detector.** Flags bugs **created during the current sprint** (created ≥ sprint start) — defects this
 sprint *injected*, not backlog debt pulled in. Jira priority maps to a quality-risk tier:
 
@@ -532,31 +474,33 @@ sprint *injected*, not backlog debt pulled in. Jira priority maps to a quality-r
 | Low / Lowest | P4 | |
 | unknown/missing | — | **P3** |
 
-**Band model** (config.py:88) — each tier maps to a score band; position within the band ramps
-linearly with defect age across the sprint duration:
+**Matrix model** (risk_matrix.py `bug_i` / `bug_p`) — the tier sets **impact**, and whether the defect
+is open, fixed, or a production escape sets **probability**:
 
 ```
-frac = min(1.0, days_old / sprint_days)          # age fraction of the sprint
-raw  = low + (high - low) * frac
+I = bug_i(tier)                            # P1→5, P2→4, P3→3, P4→2
+P = bug_p(tier, done, age_fraction, escaped)
+    escaped P1             → 5
+    open P1, age ≤ 50%     → 3   (age > 50% → 4: a lingering critical defect worsens)
+    fixed P1               → 2   (contained; verify fix / regression)
+    any other tier, open   → 2
+
+matrix_value = P × I
+risk_score   = project_matrix(matrix_value)
 ```
 
-| Band | Range | Notes |
-|------|:---:|------|
-| `P1_open` | 80–90 | open P1 defect |
-| `P1_fixed` | 60–70 | P1 fixed before sprint end — stays visible for regression risk |
-| `P2` | 30–50 | |
-| `P3` / `P4` | 10–20 | |
-| `P1_escaped` | **100** | P1 labeled `production` / `prod-escape` — scores max regardless of status/age |
+A prod-escaped P1 (labeled `production` / `prod-escape`) is always `5 × 5 = 25 → 100 CRITICAL`.
 
 **Filters:**
 - Fixed `P2+` defects are dropped (normal quality variation); fixed P1s stay visible lower down.
 - A P1 fixed but past the sprint end is also dropped (defect contained — no active risk).
 
 `confidence: 80`. Worked examples (validate_rubric.py:133):
-- P2 (High), 4/10 days old, sprint 10d: `30 + (50−30)×0.4 = 38` → **38 MEDIUM**.
-- P4 fresh today: **10 LOW**.
-- P1 open fresh: **80 CRITICAL**. P1 fixed, 4d old: `60 + 10×0.4 = 64` **HIGH**.
-- Prod-escaped P1: **100 CRITICAL**.
+- P2 (High) open, 4/10 days old: `P=2`, `I=4`, `matrix = 8` → **49 MEDIUM**.
+- P4 open, fresh: `P=2`, `I=2`, `matrix = 4` → **19 LOW**.
+- P1 open, fresh: `P=3`, `I=5`, `matrix = 15` → **80 CRITICAL**.
+- P1 fixed, 4d old: `P=2`, `I=5`, `matrix = 10` → **60 HIGH**.
+- Prod-escaped P1: `5 × 5 = 25` → **100 CRITICAL**.
 - Bug created *before* sprint start → not flagged; fixed P2 → skipped.
 
 ### 3.8 SCOPE_CREEP (sprint-level, vs first-active-sync baseline) — risk_engine.py:672
@@ -582,9 +526,9 @@ risk_score   = max(project_matrix(matrix_value), scope_creep_floor_score)   # fl
 ```
 
 **Product rule:** *any* confirmed scope creep is a red flag, even +1 SP — after the matrix projection
-the displayed score is still floored at **80 / CRITICAL** (`scope_creep_floor_score`, config.py:115),
-with the uncapped `raw_score` still serialized for triage. `confidence: 75` (or **60** if the baseline
-was captured late, i.e. > 24h after sprint start).
+the displayed score is still floored at **80 / CRITICAL** (`scope_creep_floor_score`, config.py), while
+`raw_score` (the matrix projection) is still serialized for triage. `confidence: 75` (or **60** if the
+baseline was captured late, i.e. > 24h after sprint start).
 
 Worked examples (validate_rubric.py:470):
 - Baseline 3 SP, re-estimated to 5 SP (`growth = 66.7%`): `P=5`, `I=5`, `matrix = 25` → **100 CRITICAL**
@@ -659,11 +603,9 @@ score = top score + Σ(remaining scores × 0.2),   capped 100
    sorts blockers by severity rank then score.
 5. **Backend transparency layer** (`risk_explainer.py`): every risk gets
    - a deterministic, sync-stable `risk_id` (type + sprint + anchored issue key),
-   - a `severity_reason` sentence. For **matrix-scored** risks it reads
-     "Why MEDIUM? … → P2 Unlikely × I3 Moderate = 6 → MEDIUM (20-59)"; for **legacy** risks
-     "Why CRITICAL? … → raw 132 → score 100 → CRITICAL (80+)".
-   - a `factors` block with score-math chips: the `P×I` band chip + named scale for matrix
-     risks, or the exact multiplier chips (stage ×assignee ×size ×fan-out …) for legacy risks.
+   - a `severity_reason` sentence naming the two scales and the band, e.g.
+     "Why MEDIUM? … → P2 Unlikely × I3 Moderate = 6 → MEDIUM (20-59)".
+   - a `factors` block with score-math chips: the `P×I` band chip + the named scale.
    These render as per-risk chips on the risk card via `scoreDrivers` (format.ts).
 6. **Health rollups:**
    - `generate_risk_summary` (risk_engine.py:920):
@@ -700,21 +642,16 @@ with `./venv/bin/python validate_rubric.py`).
 
 ## 7. Review observations (found while tracing)
 
-- `risk_explainer.py` emits `factors` / `severity_reason`, now with `P×I` content for matrix-scored
-  risks. The per-risk score-math chips **are** rendered on the risk card via `scoreDrivers`
-  (format.ts) — this gap is closed.
-- The 5×5 matrix is the source of truth for **sprint-level** risks; the four **ticket-level**
-  detectors (`STORY_NOT_PROGRESSING`, `EXTERNAL_DEPENDENCY`, `DUE_DATE_PASSED`, `BUG_RAISED`) still
-  use the legacy product model. Phase 2 migrates them; the matrix UI reference and the mixed
-  `severity_reason` text both reflect this interim state.
+- `risk_explainer.py` emits `factors` / `severity_reason` with `P×I` content for every risk. The
+  per-risk score-math chips **are** rendered on the risk card via `scoreDrivers` (format.ts).
+- The 5×5 matrix is now the **single scoring model for all nine detectors**; the product/band models
+  are retired. `severity_reason` is uniformly the `P×I` form.
 - `delivery_health` (RAG / `timeline_risk_score`) and `summary.overall_sprint_health` are populated
   in the snapshot but have **no UI component** on the current dashboard (`DashboardHome` renders
   RiskRadar, NextSprintOverview, VelocityTrend only).
 - `RISK_TYPE_META` still maps `STALLED_TICKETS` (`🕒 Stalled Tickets`) in `frontend/src/utils/format.ts:58`,
-  but the v2 engine no longer emits that type (it was folded into `STORY_NOT_PROGRESSING`).
-- `config.py` once shipped a `stalled_base_per_2h = 1.0` knob that no detector ever read (the stalled
-  formula hardcodes `h / 2.0`). The §2.8 refactor deleted it — dead config, not a scoring rule.
-- The matrix UI (`RiskDetailMatrix`) is currently a **reference** grid: it uses the same ISO bands as
-  the model but does not yet highlight the live risks' cells. Highlighting the P/I of active risks on
-  the grid is a natural follow-up once phase 2 lands.
-- These are **display/legacy gaps, not scoring bugs** — do not modify the rubric math for them.
+  but the engine no longer emits that type (it was folded into `STORY_NOT_PROGRESSING`).
+- The matrix UI (`RiskDetailMatrix`) is a **reference** grid: it uses the same ISO bands as the model
+  but does not yet highlight the live risks' cells. Highlighting the P/I of active risks on the grid
+  is a natural follow-up.
+- These are **display gaps, not scoring bugs** — do not modify the rubric math for them.

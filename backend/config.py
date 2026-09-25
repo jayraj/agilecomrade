@@ -67,15 +67,8 @@ class Settings(BaseSettings):
     default_stage_weight: float = 1.0
     size_weight_min: float = 0.4
     size_weight_max: float = 1.6
-    dependency_external_base: float = 75.0
-    dependency_internal_base: float = 50.0
-    dependency_default_base: float = 50.0
-    due_date_base_per_day: float = 15.0
-    due_date_base_cap: float = 70.0
-    stalled_base_cap: float = 50.0
-    # Defect quality-risk bands (score range by worst in-sprint defect tier).
-    # Tier is derived from the Jira priority field; P1 fixed-before-end and
-    # open-at-end bands differ; a prod-escaped P1 scores bug_p1_escaped_score.
+    # Defect quality-risk tiering (scored through the P x I matrix; tier sets
+    # impact, open/fixed/escaped sets probability — see risk_matrix.bug_p/bug_i).
     bug_priority_tiers: dict[str, str] = {
         "Highest": "P1",
         "High": "P2",
@@ -84,28 +77,15 @@ class Settings(BaseSettings):
         "Lowest": "P4",
     }
     bug_default_tier: str = "P3"  # unknown/missing priority
-    bug_tier_bands: dict[str, tuple[float, float]] = {
-        "P1_open": (80.0, 90.0),
-        "P1_fixed": (60.0, 70.0),
-        "P2": (30.0, 50.0),
-        "P3": (10.0, 20.0),
-        "P4": (10.0, 20.0),
-    }
-    bug_p1_escaped_score: float = 100.0
     bug_prod_escape_labels: list[str] = ["production", "prod-escape"]
     qa_throughput_default: float = 1.0  # tickets/day when no history
     qa_throughput_window: int = 3  # rolling sprints
-    qa_backlog_cap: float = 70.0
-    burndown_gap_cap: float = 60.0
     no_progress_grace_days: int = 2
-    no_progress_per_day: float = 12.0
-    no_progress_cap: float = 60.0
     trend_flat: float = 1.3
     trend_slow: float = 1.0
     trend_fast: float = 0.7
     fan_out_factor: float = 1.3
     assignee_no_active_factor: float = 1.4
-    blocking_factor: float = 1.3
     burndown_history_size: int = 8
     # Scope-creep detection (baseline captured on first active-sprint sync)
     scope_creep_min_growth_pct: float = 10.0

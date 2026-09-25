@@ -180,6 +180,66 @@ def sprint_ended_i(remaining_sp, total_sp):
     return _ladder_up(fraction, ((0.1, 2), (0.25, 3), (0.5, 4)), 5)
 
 
+# --------------------------------------------------------------------------- #
+# Ticket-level ladders
+# --------------------------------------------------------------------------- #
+
+def _size_i(story_points):
+    """Impact of an undelivered ticket from its size alone."""
+    return _ladder_up(story_points, ((1, 2), (3, 3), (5, 4)), 5)
+
+
+def _size_and_blocking_i(story_points, blocks_others):
+    """Ticket impact from size, bumped one step when it blocks other work."""
+    base = _size_i(story_points)
+    if blocks_others:
+        base += 1
+    return int(_clamp(base, MIN_SCALE, MAX_SCALE))
+
+
+def story_stalled_p(hours_stale):
+    """Will a silent ticket slip? Longer in-sprint silence = more certain."""
+    return _ladder_down(hours_stale, ((168, 5), (96, 4), (48, 3)), 2)
+
+
+def story_stalled_i(story_points, blocks_others):
+    return _size_and_blocking_i(story_points, blocks_others)
+
+
+def external_dep_p(kind):
+    """Will the dependency bite? External procurement is the least controllable."""
+    return 4 if kind == "external" else 3
+
+
+def external_dep_i(story_points, blocks_others):
+    return _size_and_blocking_i(story_points, blocks_others)
+
+
+def due_date_p(days_overdue):
+    """The date has passed; deeper breach = more certain to hurt the sprint."""
+    return _ladder_down(days_overdue, ((7, 5), (3, 4), (1, 3)), 3)
+
+
+def due_date_i(story_points):
+    return _size_i(story_points)
+
+
+def bug_i(tier):
+    """Defect severity tier -> impact (P1=Critical .. P4=Minor)."""
+    return {"P1": 5, "P2": 4, "P3": 3, "P4": 2}.get(tier, 3)
+
+
+def bug_p(tier, is_done_flag, age_fraction, escaped=False):
+    """Will the defect impair the sprint? Open P1s worsen with age; fixed P1s are contained."""
+    if escaped:
+        return 5
+    if tier == "P1":
+        if is_done_flag:
+            return 2
+        return 4 if age_fraction > 0.5 else 3
+    return 2
+
+
 def assert_projection_is_band_aligned():
     """Guard: every 1..25 product must project into its own severity band."""
     for v in range(1, 26):

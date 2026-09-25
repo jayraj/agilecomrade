@@ -110,8 +110,8 @@ def run():
     # DUE_DATE_PASSED
     # ------------------------------------------------------------------ #
     print("\nDUE_DATE_PASSED")
-    # Example: PFIN-10 1 day overdue, Code Review (1.1), 5 SP (size 1.0), blocks 1 (1.3)
-    # base=min(70,15)=15 -> 15*1.1*1.0*1.3 = 21.45 -> 21 LOW-MEDIUM
+    # Example: PFIN-10 1 day overdue, Code Review, 5 SP
+    # P: 1 day overdue -> Possible(3). I: 5 SP -> Major(4). matrix=3x4=12 -> HIGH -> project(12)=70
     sprint_d = _sprint(1, 5)
     issues_d = [
         _issue("PFIN-10", "Code Review", 5, 6, due=(datetime.utcnow() - timedelta(days=1)).date().isoformat()),
@@ -120,10 +120,10 @@ def run():
     ctx_d = {"avg_sp": avg_sprint_sp(issues_d), "blocking_map": is_blocking_map(issues_d)}
     risks_d = eng.detect_due_date_risks(sprint_d, issues_d, ctx_d)
     r = _first(risks_d, "DUE_DATE_PASSED example")
-    results.append(check("Example: 1 day overdue, CR, 5SP, blocks 1", r["risk_score"], 21))
+    results.append(check("Example: 1 day overdue, CR, 5SP, blocks 1", r["risk_score"], 70))
 
-    # Counter-example: 4 days overdue, QA (1.3), blocks 2 (1.3)
-    # base=min(70,60)=60 -> 60*1.3*1.0*1.3 = 101.4 -> 100 HIGH
+    # Counter-example: 4 days overdue, QA Review, 5 SP
+    # P: 4 days overdue -> Likely(4). I: 5 SP -> Major(4). matrix=4x4=16 -> CRITICAL -> project(16)=82
     issues_d2 = [
         _issue("PFIN-10", "In QA Review", 5, 6, due=(datetime.utcnow() - timedelta(days=4)).date().isoformat()),
         _issue("PFIN-11", "To Do", 5, 6, blocked_by="PFIN-10"),
@@ -132,16 +132,16 @@ def run():
     ctx_d2 = {"avg_sp": avg_sprint_sp(issues_d2), "blocking_map": is_blocking_map(issues_d2)}
     risks_d2 = eng.detect_due_date_risks(sprint_d, issues_d2, ctx_d2)
     r = _first(risks_d2, "DUE_DATE_PASSED counter")
-    results.append(check("Counter: 4 days overdue, QA, blocks 2", r["risk_score"], 100))
+    results.append(check("Counter: 4 days overdue, QA, blocks 2", r["risk_score"], 82))
 
     # ------------------------------------------------------------------ #
     # BUG_RAISED (in-sprint defect)
     # ------------------------------------------------------------------ #
     print("\nBUG_RAISED")
-    # Band model: tier derived from priority; score interpolates within the
-    # tier band by age across the sprint length. sprint_b is 10 days long.
+    # P x I model: tier sets impact; open/fixed/escaped sets probability.
+    # sprint_b is 10 days long.
     sprint_b = _sprint(days_elapsed=4, duration=10)
-    # P2 (High), 4/10 days old -> 30 + (50-30)*0.4 = 38 MEDIUM
+    # P2 (High) open, 4/10 days old -> P=2, I=4 -> matrix=8 -> MEDIUM -> project(8)=49
     issues_b = [
         _issue("PFIN-50", "In QA Review", 2, 2, priority="High", issue_type="Bug",
                created_days_ago=4),
@@ -149,17 +149,17 @@ def run():
     ]
     risks_b = eng.detect_bug_risks(sprint_b, issues_b)
     r = _first(risks_b, "BUG_RAISED")
-    results.append(check("P2 mid-age in band", r["risk_score"], 38))
+    results.append(check("P2 mid-age in band", r["risk_score"], 49))
     results.append(check("P2 severity MEDIUM", 1 if r["severity"] == "MEDIUM" else 0, 1, tol=0))
 
-    # Counter: P4 (Low), fresh today -> band low 10 LOW
+    # Counter: P4 (Low) open, fresh today -> P=2, I=2 -> matrix=4 -> LOW -> project(4)=19
     issues_b2 = [
         _issue("PFIN-51", "To Do", 1, 1, priority="Low", issue_type="Bug",
                created_days_ago=0),
     ]
     risks_b2 = eng.detect_bug_risks(sprint_b, issues_b2)
     r = risks_b2[0]
-    results.append(check("P4 fresh at band low", r["risk_score"], 10))
+    results.append(check("P4 fresh at band low", r["risk_score"], 19))
 
     # Filter: bug created BEFORE sprint start is not an in-sprint defect
     issues_b3 = [
@@ -169,7 +169,7 @@ def run():
     risks_b3 = eng.detect_bug_risks(_sprint(days_elapsed=4, duration=10), issues_b3)
     results.append(check("Filter: pre-sprint bug not flagged", 0 if not risks_b3 else 1, 0))
 
-    # P1 open (Highest, To Do, fresh) -> P1_open band low 80 CRITICAL
+    # P1 open (Highest, To Do, fresh) -> P=3 (age<=0.5), I=5 -> matrix=15 -> CRITICAL -> 80
     issues_b4 = [
         _issue("PFIN-53", "To Do", 1, 1, priority="Highest", issue_type="Bug",
                created_days_ago=0),
@@ -179,14 +179,14 @@ def run():
     results.append(check("P1 open at band low", r["risk_score"], 80))
     results.append(check("P1 open severity CRITICAL", 1 if r["severity"] == "CRITICAL" else 0, 1, tol=0))
 
-    # P1 fixed before sprint end (Done) -> P1_fixed: 60 + (70-60)*0.4 = 64 HIGH
+    # P1 fixed before sprint end (Done) -> contained, P=2, I=5 -> matrix=10 -> HIGH -> 60
     issues_b5 = [
         _issue("PFIN-54", "Done", 2, 2, priority="Highest", issue_type="Bug",
                created_days_ago=4),
     ]
     risks_b5 = eng.detect_bug_risks(sprint_b, issues_b5)
     r = risks_b5[0]
-    results.append(check("P1 fixed in band", r["risk_score"], 64))
+    results.append(check("P1 fixed in band", r["risk_score"], 60))
     results.append(check("P1 fixed severity HIGH", 1 if r["severity"] == "HIGH" else 0, 1, tol=0))
 
     # Fixed lower-tier defects are normal quality variation -> skipped
@@ -254,8 +254,8 @@ def run():
     # EXTERNAL_DEPENDENCY
     # ------------------------------------------------------------------ #
     print("\nEXTERNAL_DEPENDENCY")
-    # Example: external "waiting for vendor credentials", blocks 2 (1.3), 5 SP (size 1.0)
-    # 75*1.3*1.0 = 97.5 -> 97/98 HIGH
+    # Example: external "waiting for vendor credentials", 5 SP, blocks 2
+    # P: external -> Likely(4). I: 5 SP -> Major(4) +1 blocking -> Critical(5). matrix=20 -> CRITICAL -> 90
     sprint_e = _sprint(1, 5)
     issues_e = [
         _issue("E-1", "In Progress", 5, 6, blocked_by="DEP-1"),
@@ -267,11 +267,11 @@ def run():
     risks_e = eng.detect_external_dependencies(issues_e, ctx_e)
     dep = [r for r in risks_e if r["issue_key"] == "DEP-1"]
     r = dep[0]
-    results.append(check("Example: external vendor, blocks 2, 5SP", r["risk_score"], 97, tol=2))
+    results.append(check("Example: external vendor, blocks 2, 5SP", r["risk_score"], 90, tol=2))
     results.append(check("Example severity CRITICAL", 1 if r["severity"] == "CRITICAL" else 0, 1, tol=0))
 
     # Counter: internal "depends on Platform team's API", nothing blocked, 2 SP
-    # 50*1.0*size(2SP, avg5) = 50*0.82 = 41 MEDIUM
+    # P: internal -> Possible(3). I: 2 SP -> Moderate(3), no blocking bump. matrix=9 -> MEDIUM -> 59
     issues_e2 = [
         _issue("E-3", "To Do", 8, 6),
         _issue("DEP-2", "In Progress", 2, 6)
@@ -280,7 +280,7 @@ def run():
     ctx_e2 = {"avg_sp": avg_sprint_sp(issues_e2), "blocking_map": is_blocking_map(issues_e2)}
     risks_e2 = eng.detect_external_dependencies(issues_e2, ctx_e2)
     r = [x for x in risks_e2 if x["issue_key"] == "DEP-2"][0]
-    results.append(check("Counter: internal, no fan-out, 2SP", r["risk_score"], 41, tol=3))
+    results.append(check("Counter: internal, no fan-out, 2SP", r["risk_score"], 59, tol=2))
 
     # ------------------------------------------------------------------ #
     # SPRINT_ENDED_INCOMPLETE (overdue sprint still open in Jira)
