@@ -454,3 +454,106 @@ def test_clean_sprint_still_reports_on_track() -> None:
     assert card["risk_type"] == "ON_TRACK"
     assert card["severity"] == "LOW"
     assert card["risk_types"] == []
+
+
+# --------------------------------------------------------------------- #
+# Queued-ticket exemption: a not-started ticket whose assignee is already
+# mid-flight is waiting its turn, not stalled. Without this, a healthy team
+# with more tickets than free hands reported every un-started story as
+# STORY_NOT_PROGRESSING. The exemption must lapse as the sprint runs out.
+# --------------------------------------------------------------------- #
+
+from datetime import datetime, timedelta, timezone
+
+from risk_engine import RiskEngine
+
+
+def _iso_days_ago(days: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+def _sp(days_elapsed: float = 2.0, duration: int = 14) -> dict:
+    start = datetime.now(timezone.utc) - timedelta(days=days_elapsed)
+    return {
+        "name": "PFIN Sprint 9",
+        "startDate": start.isoformat(),
+        "endDate": (start + timedelta(days=duration)).isoformat(),
+    }
+
+
+def _iss(key, status, assignee, sp, hours=28):
+    return {
+        "key": key,
+        "summary": f"{key} summary",
+        "status": status,
+        "story_points": sp,
+        "assignee": assignee,
+        "updated": _iso_days_ago(hours / 24),
+        "description": "",
+    }
+
+
+def _four_busy_devs_with_three_queued() -> list:
+    """The reported situation: 4 devs mid-flight, 3 stories still To Do.
+
+    The In Progress stories are touched hours ago because those developers are
+    actively working; only the queued To Do ones have sat untouched.
+    """
+    issues = [_iss(f"PFIN-{n}", "In Progress", dev, 5, hours=2) for n, dev in
+              zip(range(1, 5), ("dev-1", "dev-2", "dev-3", "dev-4"))]
+    issues += [_iss(f"PFIN-{n}", "To Do", dev, 5) for n, dev in
+               zip(range(10, 13), ("dev-1", "dev-2", "dev-3"))]
+    return issues
+
+
+def test_queued_ticket_behind_busy_dev_is_not_a_stall() -> None:
+    """4 devs busy, 3 stories queued behind them, 28h untouched -> no risk."""
+    risks = RiskEngine().detect_story_progress_risks(_sp(), _four_busy_devs_with_three_queued(), {})
+    assert risks == []
+
+
+def test_queued_ticket_resurfaces_when_sprint_runs_out() -> None:
+    """With under the grace window left, the same queue can no longer start."""
+    # 13 days elapsed of 14 -> days_remaining == 1 < grace of 2.
+    risks = RiskEngine().detect_story_progress_risks(
+        _sp(days_elapsed=13, duration=14), _four_busy_devs_with_three_queued(), {}
+    )
+    assert len(risks) == 3
+    assert {r["issue_key"] for r in risks} == {"PFIN-10", "PFIN-11", "PFIN-12"}
+    assert all(r["type"] == "STORY_NOT_PROGRESSING" for r in risks)
+
+
+def test_queued_ticket_on_idle_dev_is_still_flagged() -> None:
+    """Nobody is working, so an untouched story really is neglect."""
+    issues = [_iss("PFIN-10", "To Do", "dev-1", 5)]
+    risks = RiskEngine().detect_story_progress_risks(_sp(), issues, {})
+    assert len(risks) == 1
+    assert risks[0]["issue_key"] == "PFIN-10"
+
+
+def test_started_but_silent_ticket_is_never_exempt() -> None:
+    """The exemption is for un-started work only; a started stall still fires."""
+    issues = [
+        _iss("PFIN-1", "In Progress", "dev-1", 5),
+        _iss("PFIN-10", "To Do", "dev-1", 5),
+    ]
+    risks = RiskEngine().detect_story_progress_risks(_sp(), issues, {})
+    assert [r["issue_key"] for r in risks] == ["PFIN-1"]
+
+
+def test_only_the_idle_devs_queued_ticket_is_flagged() -> None:
+    """One busy dev, one idle dev: only the idle dev's story is a real risk."""
+    issues = [
+        _iss("PFIN-1", "In Progress", "busy-dev", 5, hours=2),
+        _iss("PFIN-2", "To Do", "busy-dev", 5),
+        _iss("PFIN-3", "To Do", "idle-dev", 5),
+    ]
+    risks = RiskEngine().detect_story_progress_risks(_sp(), issues, {})
+    assert [r["issue_key"] for r in risks] == ["PFIN-3"]
+
+
+def test_unassigned_queued_ticket_is_never_exempt() -> None:
+    """'Unassigned' is not a busy developer, so the gate cannot hide it."""
+    issues = [_iss("PFIN-1", "In Progress", "dev-1", 5, hours=2), _iss("PFIN-9", "To Do", "Unassigned", 5)]
+    risks = RiskEngine().detect_story_progress_risks(_sp(), issues, {})
+    assert [r["issue_key"] for r in risks] == ["PFIN-9"]

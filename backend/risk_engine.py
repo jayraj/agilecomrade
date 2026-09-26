@@ -71,6 +71,17 @@ logger = logging.getLogger(__name__)
 EXTERNAL_KEYWORDS = ["vendor", "third-party", "third party", "procurement", "external", "credentials"]
 INTERNAL_KEYWORDS = ["another team", "other team", "internal", "platform team", "another squad", "squad"]
 
+# Workflow columns that mean "nobody has started this yet". Shared by the
+# sprint-level no-progress detector and the queued-ticket gate below, so the
+# two agree on what "started" means.
+NOT_STARTED_STATUSES = {"to do", "todo", "backlog", "open", "selected for development"}
+
+
+def is_not_started(status) -> bool:
+    """True when a ticket is still sitting in a pre-start workflow column."""
+    return (status or "").strip().lower() in NOT_STARTED_STATUSES
+
+
 # Severity ordinals + score windows, used to align an aggregate to the worst
 # finding actually present. Windows mirror bucket_severity's bands.
 _SEVERITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
@@ -168,24 +179,59 @@ class RiskEngine:
     # ------------------------------------------------------------------ #
     # 1. STORY_NOT_PROGRESSING (ticket-level)
     # ------------------------------------------------------------------ #
+    def _assignees_at_capacity(self, issues):
+        """Assignees already mid-flight on started work this sprint.
+
+        A queued ticket whose owner is busy is not neglected, it is waiting its
+        turn. Reuses the by-assignee grouping of detect_overload; "started"
+        means any open ticket that has left a pre-start workflow column, so a
+        developer holding one In Progress story counts as at capacity.
+        """
+        busy = set()
+        for issue in issues:
+            if is_done(issue.get("status")) or is_not_started(issue.get("status")):
+                continue
+            assignee = (issue.get("assignee") or "").strip()
+            if assignee and assignee.lower() not in ("unassigned", "none", "n/a", "-"):
+                busy.add(assignee)
+        return busy
+
     def detect_story_progress_risks(self, sprint, issues, context=None):
         """Flag tickets that have gone quiet DURING the current sprint.
 
         Staleness is measured from max(last update, sprint start): silence
         from before the sprint began (backlog-pulled tickets) does not count
         toward "not progressing" — only in-sprint inactivity does.
+
+        A not-started ticket is exempt while its assignee is at capacity and
+        there is still runway to pick it up. Silence on a ticket nobody has
+        begun is expected queueing, not a stall — flagging it buries genuine
+        findings under noise. The exemption lapses once fewer than
+        `queued_start_grace_days` remain, so a ticket that can no longer be
+        started in time is always reported.
         """
         risks = []
         context = context or {}
         avg_sp = context.get("avg_sp", 0.0)
         blocking_map = context.get("blocking_map") or is_blocking_map(issues)
         sprint_start = to_utc(sprint.get("startDate")) if sprint else None
+        busy = self._assignees_at_capacity(issues)
+        left = days_remaining(sprint) if sprint else 1
+        grace = settings.queued_start_grace_days
 
         for issue in issues:
             key = issue.get("key")
             status = issue.get("status")
             if not key or is_done(status):
                 continue
+            if is_not_started(status) and left >= grace:
+                assignee = (issue.get("assignee") or "").strip()
+                if assignee in busy:
+                    logger.debug(
+                        f"⏳ queued | {key} | assignee={assignee} | days_left={left} "
+                        f"| exempt: not started, owner at capacity"
+                    )
+                    continue
             updated = to_utc(issue.get("updated"))
             if not updated:
                 continue
@@ -247,7 +293,7 @@ class RiskEngine:
         if not open_issues:
             return []
 
-        NOT_STARTED = {"to do", "todo", "backlog", "open", "selected for development"}
+        NOT_STARTED = NOT_STARTED_STATUSES
         started = [
             i for i in open_issues
             if (i.get("status") or "").strip().lower() not in NOT_STARTED

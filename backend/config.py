@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     qa_throughput_default: float = 1.0  # tickets/day when no history
     qa_throughput_window: int = 3  # rolling sprints
     no_progress_grace_days: int = 2
+    # Runway a not-yet-started ticket gets before silence on it counts as a
+    # risk. While at least this many days remain, a queued ticket whose
+    # assignee is already mid-flight on other work is treated as normal
+    # queueing rather than a stalled story. Below the threshold it is
+    # reported, because by then it can no longer be started in time.
+    queued_start_grace_days: int = 2
     trend_flat: float = 1.3
     trend_slow: float = 1.0
     trend_fast: float = 0.7
