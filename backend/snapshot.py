@@ -17,9 +17,6 @@ from risk_explainer import (
     stable_risk_id,
 )
 
-SPRINT_LEVEL_RISK_TYPES = ["BURNDOWN_BEHIND", "QA_BOTTLENECK", "BUG_RAISED", "SCOPE_CREEP", "SPRINT_ENDED_INCOMPLETE", "SPRINT_NOT_STARTED"]
-
-
 def _issue_to_sprint_lookup(sprint_data):
     lookup = {}
     for data in sprint_data.values():
@@ -43,10 +40,13 @@ def _build_radar_data(sprint_data, risks):
                 "issues": data.get("issues", []),
             }
 
+    # Every risk that names a sprint rolls up to that sprint's card — the card
+    # must never claim a cleaner picture than the detail page shows. This
+    # previously filtered on a type allowlist, which silently dropped every
+    # ticket-level risk (STORY_NOT_PROGRESSING, EXTERNAL_DEPENDENCY,
+    # DUE_DATE_PASSED) and made such sprints render as 0% / ON_TRACK.
     risks_by_sprint = {}
     for risk in risks:
-        if risk.get("type") not in SPRINT_LEVEL_RISK_TYPES:
-            continue
         sprint_name = risk.get("sprint_key")
         if not sprint_name:
             continue

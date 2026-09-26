@@ -617,9 +617,43 @@ def run():
     results.append(check("Scope: manual seed endpoint + per-sync diagnostic log",
                          1 if (seeded and diag) else 0, 1, tol=0))
 
-    src_snap = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.py")).read()
-    results.append(check("Scope: radar cards aggregate SCOPE_CREEP (SPRINT_LEVEL_RISK_TYPES)",
-                         1 if "SCOPE_CREEP" in src_snap.split("SPRINT_LEVEL_RISK_TYPES = ")[1].split("]")[0] else 0,
+    # Behavioural, not a source-text parse: a card must surface a risk of ANY
+    # type. The old check source-parsed a type allowlist, which it also
+    # depended on existing -- it passed while ticket-level risks were silently
+    # dropped from every card, and it could not fail if a new detector was
+    # added without updating the list.
+    from snapshot import _build_radar_data
+
+    _sprint_data = {
+        "PFIN": {
+            "sprint": {"name": "Sprint 9", "startDate": "2026-01-01", "endDate": "2026-01-14"},
+            "issues": [],
+        }
+    }
+
+    def _card_types(risk_type):
+        _card = _build_radar_data(
+            _sprint_data,
+            [{
+                "type": risk_type,
+                "sprint_key": "Sprint 9",
+                "risk_score": 49,
+                "raw_score": 8,
+                "severity": "MEDIUM",
+                "issue_key": "PFIN-23",
+            }],
+        )
+        return _card[0] if _card else {}
+
+    _scope = _card_types("SCOPE_CREEP")
+    _ticket = _card_types("STORY_NOT_PROGRESSING")
+    results.append(check("Scope: radar cards aggregate sprint-level AND ticket-level risks",
+                         1 if (
+                             _scope.get("risk_score") == 49
+                             and "SCOPE_CREEP" in (_scope.get("risk_types") or [])
+                             and _ticket.get("risk_score") == 49
+                             and "STORY_NOT_PROGRESSING" in (_ticket.get("risk_types") or [])
+                         ) else 0,
                          1, tol=0))
 
     # ------------------------------------------------------------------ #

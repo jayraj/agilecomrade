@@ -1,5 +1,6 @@
 from mitigation_agent import filter_false_external_deps
 from risk_components import bucket_severity, has_dependency_signal
+from snapshot import _build_radar_data
 from risk_matrix import (
     IMPACT_LABELS,
     MATRIX_BANDS,
@@ -386,3 +387,70 @@ def test_risky_fallback_plan_keeps_the_urgent_timeline() -> None:
     assert plan["ai_used"] is False
     assert plan["timeline"] == "ASAP (within 24 hours)"
     assert "ASAP" not in plan["owner"]
+
+
+# --------------------------------------------------------------------- #
+# Radar card rollup: a sprint's card must never look cleaner than the
+# risks actually detected for it. Regression cover for the type allowlist
+# that dropped every ticket-level risk and rendered those sprints as
+# 0% / ON_TRACK while their detail pages were full of risks.
+# --------------------------------------------------------------------- #
+
+def _sprint_data(name: str = "Sprint 9") -> dict:
+    return {
+        "PFIN": {
+            "sprint": {"name": name, "startDate": "2026-01-01", "endDate": "2026-01-14"},
+            "issues": [],
+        }
+    }
+
+
+def _risk(risk_type: str, score: float = 49, sprint_key: str | None = "Sprint 9", **extra) -> dict:
+    risk = {
+        "type": risk_type,
+        "sprint_key": sprint_key,
+        "issue_key": "PFIN-23",
+        "risk_score": score,
+        "raw_score": 8,
+        "severity": "MEDIUM",
+    }
+    risk.update(extra)
+    return risk
+
+
+def test_card_aggregates_ticket_level_risks() -> None:
+    """A sprint whose only risk is a stalled story must not read 0% / ON_TRACK."""
+    for risk_type in (
+        "STORY_NOT_PROGRESSING",
+        "EXTERNAL_DEPENDENCY",
+        "DUE_DATE_PASSED",
+    ):
+        card = _build_radar_data(_sprint_data(), [_risk(risk_type)])[0]
+        assert card["risk_score"] == 49, risk_type
+        assert card["risk_types"] == [risk_type], risk_type
+        assert card["risk_type"] == risk_type, risk_type
+
+
+def test_card_aggregates_mixed_risk_types() -> None:
+    card = _build_radar_data(_sprint_data(), [
+        _risk("STORY_NOT_PROGRESSING", 49),
+        _risk("BURNDOWN_BEHIND", 70, severity="HIGH"),
+    ])[0]
+    assert card["risk_score"] == 70  # the worst risk wins
+    assert set(card["risk_types"]) == {"STORY_NOT_PROGRESSING", "BURNDOWN_BEHIND"}
+
+
+def test_card_still_excludes_risks_without_a_sprint_key() -> None:
+    card = _build_radar_data(_sprint_data(), [_risk("STORY_NOT_PROGRESSING", sprint_key=None)])[0]
+    assert card["risk_score"] == 0
+    assert card["risk_type"] == "ON_TRACK"
+    assert card["risk_types"] == []
+
+
+def test_clean_sprint_still_reports_on_track() -> None:
+    card = _build_radar_data(_sprint_data(), [])[0]
+    assert card["risk_score"] == 0
+    assert card["raw_score"] == 0
+    assert card["risk_type"] == "ON_TRACK"
+    assert card["severity"] == "LOW"
+    assert card["risk_types"] == []
