@@ -540,7 +540,7 @@ Rules:
 
     def _extract_owner(self, text):
         owners = self._extract_bullets(self._extract_section(text, "OWNER:"))
-        return "; ".join(owners) if owners else "Scrum Master (escalate if needed)"
+        return "; ".join(owners) if owners else "Scrum Master"
 
     def _extract_timeline(self, text):
         items = self._extract_bullets(self._extract_section(text, "TIMELINE:"))
