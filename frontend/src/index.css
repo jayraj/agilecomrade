@@ -1214,6 +1214,11 @@ body {
   text-decoration: underline;
 }
 
+.risk-cause-text a {
+  color: var(--color-primary-600);
+  text-decoration: underline;
+}
+
 .draft-output-actions {
   display: flex;
   align-items: center;
@@ -2299,12 +2304,6 @@ body {
 }
 
 /* ---------- risk register hand-off ---------- */
-.risk-register-action {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-color);
-}
-
 .register-btn {
   display: inline-flex;
   align-items: center;
@@ -2328,6 +2327,11 @@ body {
 .register-btn:focus-visible {
   outline: 2px solid var(--color-primary-300);
   outline-offset: 2px;
+}
+
+/* Shares the horizontal decision-action row, so drop the stacked-layout offset. */
+.risk-decision-actions .register-btn {
+  margin-top: 0;
 }
 
 /* ---------- risk transparency (signal → cause → action → decision) ---------- */

@@ -60,6 +60,20 @@ const ACTION_REWRITE: Record<string, string> = {
   'Clarify acceptance criteria before planning.': 'Align with Business/PO and clarify Acceptance Criteria before planning.',
 }
 
+// Every suspected_cause from the backend explainer closes with
+// "(confidence N%)." (backend/risk_explainer.py) — split that tail off so the
+// user-guide link can sit inline with it.
+const CONFIDENCE_TAIL = /\s*\(confidence\s+(\d+)%\)\.?\s*$/i
+
+const splitConfidence = (text?: string): { head: string; confidence: string } => {
+  const match = text?.match(CONFIDENCE_TAIL)
+  if (!text || !match) return { head: text ?? '', confidence: '' }
+  return {
+    head: text.slice(0, text.length - match[0].length).trim(),
+    confidence: `(confidence ${match[1]}%).`,
+  }
+}
+
 const patchAction = (text?: string): string | undefined => {
   if (!text) return undefined
   let out = text
@@ -100,6 +114,8 @@ export default function RiskCardItem({
     : rec
       ? patchAction(recParts?.[2] || rec)
       : undefined
+
+  const cause = splitConfidence(suspectedCause)
 
   const [pendingStatus, setPendingStatus] = useState<RiskDecisionStatus | null>(null)
   const [note, setNote] = useState('')
@@ -144,38 +160,13 @@ export default function RiskCardItem({
 
       {!hideSignal && blocker.signal && (
         <div className="risk-signal">
-          <div className={TRANSPARENCY_LABEL}>
-            Risk Signals
-            {blocker.risk_score != null && (
-              <span className="risk-score-text"> (Score: {Math.round(blocker.risk_score)})</span>
-            )}
-          </div>
-          <div className="risk-signal-headline">{blocker.signal.label}</div>
-          {blocker.signal.facts.length > 0 && (
-            <div className="risk-fact-list">
-              {blocker.signal.facts.map((fact, i) => {
-                const overdue = fact.label === 'Days remaining' ? sprintOverdueDays(endDate) : null
-                const display =
-                  overdue !== null
-                    ? { label: 'Overdue by', value: `${overdue} day${overdue === 1 ? '' : 's'}` }
-                    : fact
-                return (
-                  <div className="risk-fact" key={i}>
-                    <span className="risk-fact-label">{display.label}</span>
-                    <span className="risk-fact-value">{display.value}</span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
           {scoreDrivers(blocker).length > 0 && (
             <div
               style={{
                 display: 'flex',
                 flexWrap: 'wrap',
                 gap: '6px',
-                marginTop: '10px',
+                marginBottom: '10px',
               }}
             >
               {scoreDrivers(blocker).map((c, i) => (
@@ -200,13 +191,43 @@ export default function RiskCardItem({
               ))}
             </div>
           )}
+          <div className={TRANSPARENCY_LABEL}>
+            Risk Signals
+            {blocker.risk_score != null && (
+              <span className="risk-score-text"> (Score: {Math.round(blocker.risk_score)})</span>
+            )}
+          </div>
+          <div className="risk-signal-headline">{blocker.signal.label}</div>
+          {blocker.signal.facts.length > 0 && (
+            <div className="risk-fact-list">
+              {blocker.signal.facts.map((fact, i) => {
+                const overdue = fact.label === 'Days remaining' ? sprintOverdueDays(endDate) : null
+                const display =
+                  overdue !== null
+                    ? { label: 'Overdue by', value: `${overdue} day${overdue === 1 ? '' : 's'}` }
+                    : fact
+                return (
+                  <div className="risk-fact" key={i}>
+                    <span className="risk-fact-label">{display.label}</span>
+                    <span className="risk-fact-value">{display.value}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {suspectedCause && (
         <div className="risk-cause">
           <div className={TRANSPARENCY_LABEL}>Suspected cause</div>
-          <p className="risk-cause-text">{suspectedCause}</p>
+          <p className="risk-cause-text">
+            {cause.head}
+            {cause.head && cause.confidence && ' '}
+            {cause.confidence}
+            {cause.head && ' '}
+            <a href="/user-guide.html#scoring">Risk score reference</a>
+          </p>
         </div>
       )}
 
@@ -237,16 +258,6 @@ export default function RiskCardItem({
         </div>
       )}
 
-      {showRegister && (
-        <div className="risk-register-action">
-          <div className={TRANSPARENCY_LABEL}>Risk register</div>
-          <button type="button" className="register-btn" onClick={handleAddToRegister}>
-            <ClipboardPlus size={16} />
-            Add to Risk Register
-          </button>
-        </div>
-      )}
-
       <div className="risk-decision">
         <div className="risk-decision-head">
           <div
@@ -274,6 +285,12 @@ export default function RiskCardItem({
                   {option}
                 </button>
               ))}
+              {showRegister && (
+                <button type="button" className="register-btn" onClick={handleAddToRegister}>
+                  <ClipboardPlus size={16} />
+                  Add to Risk Register
+                </button>
+              )}
             </div>
             {noteVisible && (
               <div className="risk-decision-note-row">
