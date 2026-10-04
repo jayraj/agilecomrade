@@ -33,8 +33,18 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,svg,png,ico,webmanifest}', '!**/user-guide.html'],
         runtimeCaching: [
+          {
+            urlPattern: /\/user-guide\.html$/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'user-guide',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
