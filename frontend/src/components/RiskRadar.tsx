@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import EmptyDashboard from './EmptyDashboard'
 import { RefreshCw, TriangleAlert } from 'lucide-react'
 import { useSnapshot } from '../hooks/useSnapshot'
 import { useSync } from '../context/SyncContext'
@@ -20,12 +20,7 @@ export default function RiskRadar({ onSelectDetail }: RiskRadarProps) {
   const hasRisks = radarData.some((r) => (r.risk_types?.length ?? 0) > 0)
 
   if (noProfile) {
-    return (
-      <div className="no-data">
-        <p>No profile configured yet.</p>
-        <Link className="details-btn" to="/settings">⚙️ Go to Settings to create a profile</Link>
-      </div>
-    )
+    return <EmptyDashboard />
   }
 
   if (error) {

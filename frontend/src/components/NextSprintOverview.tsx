@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import EmptyDashboard from './EmptyDashboard'
 import { RefreshCw } from 'lucide-react'
 import { useSnapshot } from '../hooks/useSnapshot'
 import { useSync } from '../context/SyncContext'
@@ -16,12 +16,7 @@ export default function NextSprintOverview({ onSelectDetail }: NextSprintOvervie
   const projects = snapshot?.next_sprint_overview.projects ?? []
 
   if (noProfile) {
-    return (
-      <div className="no-data">
-        <p>No profile configured yet.</p>
-        <Link className="details-btn" to="/settings">⚙️ Go to Settings to create a profile</Link>
-      </div>
-    )
+    return <EmptyDashboard />
   }
 
   if (error) {

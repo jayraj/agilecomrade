@@ -1,3 +1,4 @@
+import EmptyDashboard from './EmptyDashboard'
 import { useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import {
@@ -27,7 +28,12 @@ interface VelocityTrendProps {
 
 export default function VelocityTrend({ velocity }: VelocityTrendProps) {
   const { syncIntervalSeconds, refreshKey } = useSync()
-  const { snapshot, loading } = useSnapshot(syncIntervalSeconds, refreshKey)
+  const { snapshot, loading, noProfile } = useSnapshot(syncIntervalSeconds, refreshKey)
+
+  if (noProfile) {
+    return <EmptyDashboard />
+  }
+
   const data = velocity ?? snapshot?.velocity ?? {}
 
   // Some mobile browsers don't fire a resize after orientation change,
