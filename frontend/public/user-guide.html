@@ -18,7 +18,18 @@
       --amber-bg: #fffbeb;
       --amber-line: #fde68a;
       --amber-text: #92400e;
+      --info-bg: #eff6ff;
+      --info-line: #bfdbfe;
       --shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      /* severity palette — mirrors the app's risk badges */
+      --sev-critical: #ef4444;
+      --sev-high: #d97706;
+      --sev-medium: #f59e0b;
+      --sev-low: #10b981;
+      --sev-critical-bg: #fef2f2;
+      --sev-high-bg: #fff7ed;
+      --sev-medium-bg: #fffbeb;
+      --sev-low-bg: #ecfdf5;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -29,17 +40,18 @@
       font-size: 15px;
     }
     header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
       background: #ffffff;
       border-bottom: 1px solid var(--line);
       height: 52px;
     }
     header .wrap {
-      max-width: 768px;
-      margin: 0 auto;
+      padding: 0 16px;
       height: 100%;
       display: flex;
       align-items: center;
-      padding: 0 16px;
     }
     .brand-home { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
     .brand-home:hover { opacity: 0.85; }
@@ -75,28 +87,34 @@
     }
     .guide-breadcrumb:hover { color: var(--ink); }
     .page-title { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
-    h2 { font-size: 18px; font-weight: 700; margin: 32px 0 12px; letter-spacing: -0.01em; }
-    h3 { font-size: 15px; font-weight: 700; margin: 20px 0 6px; }
+    h2 { font-size: 18px; font-weight: 700; margin: 40px 0 12px; letter-spacing: -0.01em; scroll-margin-top: 20px; }
+    h3 { font-size: 15px; font-weight: 700; margin: 24px 0 6px; scroll-margin-top: 20px; }
     p, li { color: var(--secondary); }
     ul, ol { padding-left: 22px; margin: 8px 0; }
     li { margin-bottom: 4px; }
-    .card {
-      background: var(--card);
+    /* ---- callouts: one language, three weights ---- */
+    .callout {
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 20px;
-      margin-top: 12px;
-      box-shadow: var(--shadow);
-    }
-    .notice {
-      background: var(--amber-bg);
-      border: 1px solid var(--amber-line);
       border-radius: 12px;
       padding: 12px 16px;
       margin: 16px 0;
-      color: var(--amber-text);
       font-size: 14px;
       line-height: 1.625;
+    }
+    .callout p, .callout ul, .callout ol { margin: 0; }
+    .callout ul, .callout ol { padding-left: 20px; }
+    .callout p + p, .callout p + ul, .callout p + ol { margin-top: 6px; }
+    .callout li + li { margin-top: 6px; }
+    .callout--warn { background: var(--amber-bg); border-color: var(--amber-line); color: var(--amber-text); }
+    .callout--info { background: var(--info-bg); border-color: var(--info-line); color: var(--secondary); }
+    .callout--fine {
+      border: 0;
+      background: none;
+      padding: 0;
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--muted);
     }
     .table-wrap {
       margin-top: 12px;
@@ -104,6 +122,7 @@
       border-radius: 16px;
       box-shadow: var(--shadow);
       overflow: hidden;
+      overflow-x: auto;
     }
     table { width: 100%; border-collapse: collapse; background: var(--card); }
     thead tr { background: var(--line-soft); }
@@ -115,6 +134,7 @@
       letter-spacing: 0.05em;
       color: var(--muted);
       padding: 12px 20px;
+      white-space: nowrap;
     }
     td {
       font-size: 14px;
@@ -123,11 +143,211 @@
       vertical-align: top;
       color: var(--secondary);
     }
+    td strong { color: var(--ink); }
     code { background: var(--line-soft); padding: 2px 5px; border-radius: 4px; font-size: 13px; color: #334155; }
     a { color: var(--accent); }
     footer { max-width: 768px; margin: 0 auto; padding: 0 24px 40px; color: var(--muted); font-size: 13px; }
     .back { color: var(--accent); text-decoration: none; font-size: 14px; }
     .back:hover { text-decoration: underline; }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* ---- on this page ---- */
+    .toc {
+      padding: 18px 20px 14px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      margin-bottom: 8px;
+    }
+    .lead { font-size: 15px; color: var(--muted); margin-bottom: 4px; }
+    .toc-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .toc ol { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 24px; }
+    .toc > ol > li { margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+    .toc a { text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    .toc ol ol {
+      list-style: none;
+      padding: 0;
+      margin: 4px 0 0;
+      font-weight: 400;
+      font-size: 13px;
+      columns: 1;
+    }
+    .toc ol ol li { margin-bottom: 2px; }
+    .toc ol ol li::before { content: "– "; color: var(--muted-2); }
+    .toc-num { color: var(--muted-2); font-weight: 600; margin-right: 6px; }
+
+    @media (min-width: 1024px) {
+      .toc {
+        position: fixed;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 220px;
+        max-height: 80vh;
+        overflow-y: auto;
+        z-index: 10;
+      }
+      .toc ol { columns: 1; }
+      main { margin-left: 240px; margin-right: auto; }
+    }
+
+    /* ---- severity dot + pill, matching the in-app badges ---- */
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+    .dot.critical { background: var(--sev-critical); }
+    .dot.high { background: var(--sev-high); }
+    .dot.medium { background: var(--sev-medium); }
+    .dot.low { background: var(--sev-low); }
+
+    /* ---- the 1-25 product table (mirrors the in-app Risk score matrix) ---- */
+    .matrix-table thead th {
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      padding: 8px 6px 4px;
+      vertical-align: bottom;
+      background: var(--card);
+    }
+    .matrix-table thead th:first-child { text-align: left; }
+    .matrix-table thead th:first-child strong { display: block; color: var(--secondary); }
+    .matrix-table th span { display: block; font-weight: 400; }
+    .matrix-table tbody th {
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 11px;
+      text-align: right;
+      padding: 7px 10px 7px 6px;
+      vertical-align: middle;
+    }
+    .matrix-table td {
+      padding: 7px 4px;
+      min-width: 58px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .matrix-cell.low { background: var(--sev-low-bg); }
+    .matrix-cell.medium { background: var(--sev-medium-bg); }
+    .matrix-cell.high { background: var(--sev-high-bg); }
+    .matrix-cell.critical { background: var(--sev-critical-bg); }
+    .matrix-cell b { display: block; font-size: 14px; color: var(--ink); }
+    .matrix-cell i {
+      display: block;
+      font-style: normal;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .matrix-cell.low i { color: #047857; }
+    .matrix-cell.medium i { color: #92400e; }
+    .matrix-cell.high i { color: #9a3412; }
+    .matrix-cell.critical i { color: #b91c1c; }
+
+    /* ---- collapsible exact thresholds ---- */
+    .appendix {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-top: 14px;
+      box-shadow: var(--shadow);
+    }
+    .appendix > summary {
+      cursor: pointer;
+      padding: 14px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--secondary);
+      list-style: none;
+    }
+    .appendix > summary::-webkit-details-marker { display: none; }
+    .appendix > summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 8px;
+      color: var(--accent);
+      transition: transform 0.15s ease;
+    }
+    .appendix[open] > summary::before { transform: rotate(90deg); }
+    .appendix > summary:hover { color: var(--ink); }
+    .appendix > summary { display: flex; align-items: center; }
+    .appendix > summary .det-conf { margin-left: auto; }
+    .appendix-body { padding: 0 20px 18px; }
+    .det-when { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+    .det-when strong { color: var(--secondary); }
+    .det-conf {
+      display: inline-block;
+      margin-left: 10px;
+      padding: 1px 8px;
+      border-radius: 999px;
+      background: var(--line-soft);
+      color: var(--secondary);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .appendix .table-wrap {
+      margin-top: 6px;
+      border-radius: 10px;
+    }
+    .appendix th, .appendix td { padding: 8px 14px; font-size: 13px; }
+    .appendix th { font-size: 11px; }
+    .appendix .callout { margin-top: 10px; }
+    .appendix td:first-child { color: var(--secondary); }
+
+    .appendix thead tr:first-child th {
+      text-align: center;
+      font-weight: 700;
+      font-size: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .appendix thead tr:last-child th {
+      border-bottom: 2px solid var(--line);
+    }
+    .appendix td:nth-child(3),
+    .appendix thead tr:last-child th:nth-child(3) {
+      border-left: 1px solid var(--line);
+    }
+
+    .formula {
+      background: var(--line-soft);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin: 10px 0;
+      font-size: 14px;
+      color: var(--ink);
+    }
+    .formula .arrow { color: var(--muted-2); margin: 0 8px; }
+    .tight li { margin-bottom: 2px; }
+    .sub-note { font-size: 13px; }
   </style>
 </head>
 <body>
@@ -151,107 +371,498 @@
       Go to Dashboard
     </a>
 
-    <h1 class="page-title">User Guide</h1>
-    <p>Agile Comrade watches your active and upcoming Jira sprints, scores delivery risks
-    in real time, and drafts AI mitigation plans — so you can act before a sprint slips.</p>
+    <h1 class="page-title">Agile Comrade Guide</h1>
+    <p class="lead">Agile Comrade watches your active and upcoming Jira sprints, scores delivery risks from
+    data already in Jira, and drafts AI mitigation plans, so you can act before a sprint slips.</p>
 
-    <div class="notice">
-      <strong>MVP / demo software.</strong> Agile Comrade is an MVP decision-support tool for
-      Scrum Masters and Delivery Managers: it surfaces potential delivery risks early so teams can
-      investigate and act sooner. AI results are signals, not guarantees — they may contain false
-      positives, miss risks, or lack context.
-    </div>
-
-    <h2>1. Get started: connect your workspace</h2>
-    <div class="card">
+    <nav class="toc" aria-label="On this page">
+      <div class="toc-title">Contents</div>
       <ol>
-         <li>Open <strong>Settings</strong> and fill the profile form:
-          <ul>
-            <li><strong>Slug</strong> — a short unique id for this profile (used to switch profiles)</li>
-            <li><strong>Jira Cloud URL</strong> — e.g. <code>https://your-domain.atlassian.net</code></li>
-            <li><strong>Jira email + API token</strong> — create one at
-              <code>id.atlassian.com/manage-profile/security/api-tokens</code></li>
-            <li><strong>Project keys</strong> — comma separated, e.g. <code>PFIN, MOS</code></li>
-            <li><strong>Story points field</strong> — the Jira custom field id for story points
-              (e.g. <code>customfield_10102</code>); Test Connection detects it automatically</li>
-            <li><strong>LLM provider</strong> — Gemini or OpenRouter, plus the <strong>Model</strong>
-              and your API key</li>
-          </ul>
-        </li>
-        <li>(Optional) pick an <strong>LLM provider</strong>: Gemini or OpenRouter, with your API key.
-            Without it everything still works using built-in rule-based scoring.</li>
-        <li>Click <strong>Test Connection</strong> to verify auth, story-point field detection and each project's sprint status.</li>
-        <li>Click <strong>Save Profile</strong>. Your access token is stored only in this browser.</li>
+        <li><span class="toc-num">1</span><a href="#before-you-start">Before you start</a></li>
+        <li><span class="toc-num">2</span><a href="#setup">Connect your workspace</a></li>
+        <li><span class="toc-num">3</span><a href="#dashboard">The dashboard</a></li>
+        <li><span class="toc-num">4</span><a href="#scoring">How scoring works</a></li>
+        <li><span class="toc-num">5</span><a href="#checks">Checks, confidence and thresholds</a></li>
+        <li><span class="toc-num">6</span><a href="#safeguards">What deliberately doesn't raise a risk</a></li>
+        <li><span class="toc-num">7</span><a href="#freshness">Data freshness</a></li>
+        <li><span class="toc-num">8</span><a href="#troubleshooting">Troubleshooting</a></li>
+        <li><span class="toc-num">9</span><a href="#appendix">Appendix: exact thresholds</a></li>
       </ol>
-       <div class="notice">Secrets are encrypted at rest; assignee names are pseudonymized and emails scrubbed before analysis reaches AI providers (names in free text may still appear). See the <a href="/privacy.html">privacy notice</a>.</div>
+    </nav>
+
+    <h2 id="before-you-start">1. Before you start</h2>
+    <p class="callout callout--warn"><strong>MVP software: a signal, not a verdict.</strong> The model can be
+    wrong in both directions and sees only Jira. It can't know about someone on leave, a stakeholder
+    changing their mind or a customer escalation. <strong>Confirm before you escalate.</strong></p>
+    <div class="callout callout--info">
+      <p><strong>AI privacy: what leaves your server.</strong>
+      AI analysis runs only when you click <strong>Mitigate with AI</strong> or <strong>Scan with AI</strong> — never automatically.</p>
+      <ul>
+        <li><strong>Sent to the AI provider:</strong> ticket keys, summaries, statuses, story points, due dates and risk scores. Assignee names are replaced with per-call pseudonyms (dev-01, dev-02…) and emails are stripped from all text before anything leaves your server.</li>
+        <li><strong>Never sent:</strong> real assignee names, email addresses, API keys or profile credentials.</li>
+        <li><strong>Stays on your server:</strong> the pseudonymisation key (fresh for each call, then discarded) and your full Jira snapshot.</li>
+        <li><strong>Encrypted at rest:</strong> profile and snapshot data. Deleting a profile in Settings erases its server-side data immediately.</li>
+      </ul>
     </div>
 
-    <h2>2. The dashboard</h2>
-
-    <h3>Active Sprints (Risk Scanner)</h3>
-    <p>One card per active sprint with its overall risk score and per-severity risk counts. Click
-    <strong>Details →</strong> to open the sprint view.</p>
-
-    <h3>Sprint Details</h3>
-      <ul>
-        <li>Issues are listed with severity, the issue key, and the AI recommendation. For future sprints the risk type is also shown.</li>
-        <li>Use <strong>Mitigation Plan with AI</strong> (current sprint) or <strong>Scan with AI</strong> (future sprint) — the button sits above the Work Items, and the AI Mitigation Plan card (action items, owner, timeline, success criteria) appears directly below it.</li>
-      <li>If your LLM provider is unreachable, an amber <strong>rule-based fallback</strong> note appears inside the plan card and the plan is built from built-in heuristics instead.</li>
-      <li><strong>💬 Draft Message</strong> writes a polite follow-up for the assignee. Hit <strong>📋 Copy</strong> and paste it into the Jira ticket yourself — the app never posts to Jira.</li>
-    </ul>
-
-    <h3>Future Sprints (readiness)</h3>
-    <p>Before planning begins, run <strong>Scan with AI</strong> on an upcoming
-    sprint to surface early warnings: unassigned work, missing story points, thin acceptance
-    criteria, overloaded assignees, hidden dependencies.</p>
-
-    <h3>Velocity Trend</h3>
-    <p>Trend view of completed story points per sprint, so you can spot velocity dips before they
-    threaten the next commitment.</p>
-
-    <h3>Risk severity colors</h3>
+    <h2 id="setup">2. Connect your workspace</h2>
+    <p>Open <strong>Settings</strong>, fill in the profile, click <strong>Test Connection</strong> (checks
+    login, story-point field and each project's sprint status), then <strong>Save Profile</strong>.</p>
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Badge</th><th>Meaning</th><th>Suggested response</th></tr>
+          <tr><th>Field</th><th>What to enter</th></tr>
         </thead>
         <tbody>
-          <tr><td><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:#ef4444"></span><strong>CRITICAL</strong></td><td>Sprint outcome at serious risk</td><td>Act today; escalate</td></tr>
-          <tr><td><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:#d97706"></span><strong>HIGH</strong></td><td>Likely slippage without intervention</td><td>Plan mitigation this week</td></tr>
-          <tr><td><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:#f59e0b"></span><strong>MEDIUM</strong></td><td>Watch-list item</td><td>Monitor at stand-up</td></tr>
-          <tr><td><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:#10b981"></span><strong>LOW</strong></td><td>No action needed</td><td>—</td></tr>
+          <tr><td><strong>Slug</strong></td><td>Short unique id for the profile, used to switch between profiles.</td></tr>
+          <tr><td><strong>Jira Cloud URL</strong></td><td><code>https://your-domain.atlassian.net</code></td></tr>
+          <tr><td><strong>Jira email + API token</strong></td><td>Create a token at <code>id.atlassian.com/manage-profile/security/api-tokens</code>.</td></tr>
+          <tr><td><strong>Project keys</strong></td><td>Comma-separated, e.g. <code>PFIN</code>, <code>MOS</code>.</td></tr>
+          <tr><td><strong>Story points field</strong></td><td>Custom field id, e.g. <code>customfield_10102</code>. Test Connection detects it.</td></tr>
+          <tr><td><strong>LLM provider</strong></td><td>Gemini or OpenRouter, plus model and API key. Optional: without it, rule-based scoring still works.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout callout--info">Two different tokens: your <strong>Agile Comrade access token</strong>
+    stays only in this browser (the server stores a hash). Your <strong>Jira API token</strong> is
+    encrypted on the server because the backend needs it to fetch sprints.</p>
+
+    <h2 id="dashboard">3. The dashboard</h2>
+    <h3 id="dashboard-active">Active sprints</h3>
+    <p>One card per sprint. The gauge shows the score of the single worst risk, next to severity counts
+    and progress. No risks shows <code>0 / ON_TRACK</code>. Click <strong>Details</strong> to open the
+    sprint. Each risk gets its own card:</p>
+    <ul>
+      <li>Every card is headed by its severity and risk type (e.g. <code>critical · 📍 Not Progressing</code>).</li>
+      <li><strong>Risk Signals</strong>: the measured facts and the score, shown as e.g.
+      <code>P4 × I5 = 20 → CRITICAL</code>. How these are calculated is in the
+      <a href="#appendix">appendix</a>.</li>
+      <li><strong>Where the arithmetic shows</strong> — the chip strip spells it out
+      (<code>P4 × I5 = 20 → CRITICAL (80+)</code>), and the collapsible <strong>Risk score matrix</strong>
+      panel at the top of the page is the full grid, with every cell's band on hover.</li>
+      <li><strong>Suspected cause</strong> and <strong>Suggested actions</strong>, with a confidence %.
+      <strong>Draft Message</strong> writes a follow-up for you to copy into Jira; the app never posts there.</li>
+      <li><strong>Human decision</strong>: mark it resolved, owned, accepted or mitigated, with a note.
+      It's remembered across syncs. <strong>Add to Risk Register</strong> is a hand-off stub for tracking
+      a risk outside the app.</li>
+      <li>Below the issue list, use <strong>Mitigation Plan with AI</strong> (current sprint) or
+      <strong>Scan with AI</strong> (upcoming sprint). If the LLM is unreachable, an amber note shows a
+      rule-based fallback instead.</li>
+    </ul>
+
+    <h3 id="dashboard-upcoming">Upcoming sprints</h3>
+    <p>Run <strong>Scan with AI</strong> to catch unassigned work, missing points, thin acceptance
+    criteria, oversized tickets and overloaded people. These use a count-based model, not probability × impact (see
+    <a href="#upcoming-checks">section 5</a>).</p>
+
+    <h3 id="dashboard-velocity">Velocity trend</h3>
+    <p>Completed points per sprint, per project, with an average, so you can spot dips early.</p>
+
+    <h2 id="scoring">4. How scoring works</h2>
+    <div class="formula">
+      <strong>Probability</strong>
+      <span class="arrow">×</span>
+      <strong>Impact</strong>
+      <span class="arrow">=</span>
+      <strong>a score out of 25</strong>
+      <span class="arrow">→</span>
+      <strong>0–100</strong>
+    </div>
+    <p><strong>Probability × Impact = score out of 25, stretched onto 0–100 so the number and the
+    severity band always agree.</strong> A higher number means more risk, not more progress.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Badge</th><th>Score</th><th>Meaning</th><th>Response</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="dot critical"></span><strong>CRITICAL</strong></td><td>80–100</td><td>Sprint at serious risk</td><td>Act today; escalate</td></tr>
+          <tr><td><span class="dot high"></span><strong>HIGH</strong></td><td>60–79</td><td>Likely slippage</td><td>Plan mitigation this week</td></tr>
+          <tr><td><span class="dot medium"></span><strong>MEDIUM</strong></td><td>20–59</td><td>Watch-list item</td><td>Monitor at stand-up</td></tr>
+          <tr><td><span class="dot low"></span><strong>LOW</strong></td><td>0–19</td><td>No action needed</td><td>None</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Rows are probability, columns are impact. The big number is the product; the small one is the score.</p>
+
+    <div class="table-wrap">
+      <table class="matrix-table">
+        <caption class="visually-hidden">Probability multiplied by impact, showing the resulting score and severity for all 25 combinations</caption>
+        <thead>
+          <tr>
+            <th><strong>Impact →</strong><span>Probability ↓</span></th>
+            <th scope="col">1<span>Insignificant</span></th>
+            <th scope="col">2<span>Minor</span></th>
+            <th scope="col">3<span>Moderate</span></th>
+            <th scope="col">4<span>Major</span></th>
+            <th scope="col">5<span>Critical</span></th>
+          </tr>
+        </thead>
+        
+<tbody>
+          <tr>
+            <th scope="row">1<span>Rare</span></th>
+            <td class="matrix-cell low"><b>1</b><i>0</i></td>
+            <td class="matrix-cell low"><b>2</b><i>6</i></td>
+            <td class="matrix-cell low"><b>3</b><i>13</i></td>
+            <td class="matrix-cell low"><b>4</b><i>19</i></td>
+            <td class="matrix-cell medium"><b>5</b><i>20</i></td>
+          </tr>
+          <tr>
+            <th scope="row">2<span>Unlikely</span></th>
+            <td class="matrix-cell low"><b>2</b><i>6</i></td>
+            <td class="matrix-cell low"><b>4</b><i>19</i></td>
+            <td class="matrix-cell medium"><b>6</b><i>30</i></td>
+            <td class="matrix-cell medium"><b>8</b><i>49</i></td>
+            <td class="matrix-cell high"><b>10</b><i>60</i></td>
+          </tr>
+          <tr>
+            <th scope="row">3<span>Possible</span></th>
+            <td class="matrix-cell low"><b>3</b><i>13</i></td>
+            <td class="matrix-cell medium"><b>6</b><i>30</i></td>
+            <td class="matrix-cell medium"><b>9</b><i>59</i></td>
+            <td class="matrix-cell high"><b>12</b><i>70</i></td>
+            <td class="matrix-cell critical"><b>15</b><i>80</i></td>
+          </tr>
+          <tr>
+            <th scope="row">4<span>Likely</span></th>
+            <td class="matrix-cell low"><b>4</b><i>19</i></td>
+            <td class="matrix-cell medium"><b>8</b><i>49</i></td>
+            <td class="matrix-cell high"><b>12</b><i>70</i></td>
+            <td class="matrix-cell critical"><b>16</b><i>82</i></td>
+            <td class="matrix-cell critical"><b>20</b><i>90</i></td>
+          </tr>
+          <tr>
+            <th scope="row">5<span>Almost Certain</span></th>
+            <td class="matrix-cell medium"><b>5</b><i>20</i></td>
+            <td class="matrix-cell high"><b>10</b><i>60</i></td>
+            <td class="matrix-cell critical"><b>15</b><i>80</i></td>
+            <td class="matrix-cell critical"><b>20</b><i>90</i></td>
+            <td class="matrix-cell critical"><b>25</b><i>100</i></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout callout--fine">Example: a 2-point ticket silent for 200 hours scores
+    <strong>5 × 3 = 15</strong>, which is <strong>CRITICAL 80</strong>, even though it's the smallest
+    ticket on the board. That is deliberate.</p>
+
+    <h2 id="checks">5. Checks, confidence and thresholds</h2>
+    <p>Active sprints run nine checks. <strong>Confidence</strong> is how sure the model is that the
+    signal is real. It's fixed per check, so it reads the same on every run.</p>
+
+    <h3 id="active-checks">Active-sprint checks</h3>
+    <p class="sub-note">Probability and impact come from the factors below. Exact numbers are in the 
+    <a href="#appendix">appendix</a>.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Check</th><th>Fires when</th><th>Riskier when</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>📍 Not Progressing</strong></td><td>An open ticket has had no update for over 24 hours.</td><td>Longer silence, bigger ticket, other work blocked</td><td>85%</td></tr>
+          <tr><td><strong>🚦 Sprint Not Started</strong></td><td>The sprint is 2+ days old and no open ticket has left a start column (To Do / Backlog / Open).</td><td>More of the sprint gone, more tickets waiting</td><td>90%</td></tr>
+          <tr><td><strong>📉 Burndown Behind</strong></td><td>Progress is more than 10% behind the ideal line, once the sprint is 25% done.</td><td>Less time left, wider gap</td><td>90%</td></tr>
+          <tr><td><strong>🧪 QA Bottleneck</strong></td><td>Two or more stories are waiting in a QA column.</td><td>Queue too long for the time left, more stories, any stuck over 24h</td><td>80%</td></tr>
+          <tr><td><strong>🔗 External Dep</strong></td><td>A ticket is blocked by another ticket, or its text says it is waiting on or depends on someone.</td><td>Outside vendor worse than internal team, bigger ticket</td><td>75%</td></tr>
+          <tr><td><strong>⏰ Due Date Passed</strong></td><td>An open ticket has a due date earlier than today.</td><td>More days late, bigger ticket</td><td>85%</td></tr>
+          <tr><td><strong>🐛 Bug Raised</strong></td><td>A defect was created during this sprint. Backlog bugs are ignored.</td><td>Higher priority, older, reached production</td><td>80%</td></tr>
+          <tr><td><strong>📈 Scope Creep</strong></td><td>Work was added or estimates raised after the sprint started.</td><td>Bigger growth in points (always CRITICAL)</td><td>75%</td></tr>
+          <tr><td><strong>Sprint Ended Incomplete</strong></td><td>The end date has passed but Jira still shows the sprint as active.</td><td>More work left unfinished</td><td>90%</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h2>3. Data freshness</h2>
-    <p>The dashboard reads from a cached snapshot refreshed automatically every few minutes,
-    or immediately via <strong>Sync Now</strong> in the top bar.</p>
+    <h3 id="upcoming-checks">Upcoming-sprint checks (count-based)</h3>
+    <p>Before a sprint starts there's no progress to measure. Each check starts from a base score and
+    adds points per affected item, so severity rises with the count.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Check</th><th>Fires when</th><th>Score</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>👤 Unassigned</strong></td><td>Committed items have no owner</td><td>40, +10 per item</td><td>85%</td></tr>
+          <tr><td><strong>📐 Unestimated</strong></td><td>Items have no story points</td><td>35, +8 per item</td><td>80%</td></tr>
+          <tr><td><strong>📝 Undefined Scope</strong></td><td>No description, or thin acceptance criteria</td><td>30, +8 per item</td><td>75%</td></tr>
+          <tr><td><strong>🏗️ Oversized</strong></td><td>Items of 8+ points</td><td>50, +15 per item</td><td>70%</td></tr>
+          <tr><td><strong>🔥 Overloaded</strong></td><td>One person holds 3+ items and ≥1.5× the team average</td><td>Uses the matrix, from how far above average and how many points they hold</td><td>75%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout callout--info"><strong>Overloaded</strong> is the only upcoming check that uses
+    probability × impact. Both conditions must hold, so a small balanced team is never flagged.</p>
 
-    <h2>4. Troubleshooting</h2>
+    <p>Two numbers appear on an upcoming sprint card:</p>
+    <ul class="tight">
+      <li><strong>Gauge score</strong>: the worst finding plus 20% of each other finding, held inside the
+      worst finding's band so it can't claim a severity nothing supports.</li>
+      <li><strong>Readiness bar</strong>: items not flagged ÷ total items, coloured from the same score
+      so the two never contradict.</li>
+    </ul>
+
+    <h2 id="safeguards">6. What deliberately doesn't raise a risk</h2>
+    <p>A tool that cries wolf gets ignored. These safeguards keep a healthy sprint green.</p>
+    <ul>
+      <li><strong>Silence is measured from the later of sprint start and last update</strong>, so tickets
+      pulled from the backlog aren't punished for old timestamps.</li>
+      <li><strong>Queued ticket, busy owner</strong>: a To Do ticket whose owner is busy is exempt, until
+      fewer than 2 days remain.</li>
+      <li><strong>Grace windows</strong>: burndown isn't judged until the sprint is 25% done, and Sprint
+      Not Started waits 2 days.</li>
+      <li><strong>A vendor mention isn't a blocker.</strong> Only a <code>blocked_by</code> link or
+      explicit wording ("waiting for", "blocked by", "depends on", "pending from", "on hold") counts.</li>
+      <li><strong>Bugs</strong>: only defects created in the sprint count. Only a fixed Highest-priority
+      bug stays visible, at lower probability.</li>
+      <li><strong>Due dates</strong> use your Jira timezone, not the server's clock.</li>
+      <li><strong>Scope creep needs two readings.</strong> A sprint synced once is never flagged.</li>
+    </ul>
+
+    <h2 id="freshness">7. Data freshness</h2>
+    <p>There's no background job. The last snapshot is cached for <strong>5 minutes</strong> and reused.
+    After that, or when you press <strong>Sync Now</strong>, Jira is fetched again and every risk is
+    rescored. The top-bar timestamp shows when the data was pulled.</p>
+
+    <h2 id="troubleshooting">8. Troubleshooting</h2>
     <div class="table-wrap">
       <table>
         <thead>
           <tr><th>Symptom</th><th>Fix</th></tr>
         </thead>
         <tbody>
-          <tr><td>"No active current sprints"</td><td>Start/schedule a sprint in Jira for the configured projects, then Sync Now.</td></tr>
-          <tr><td>AI analysis fails or is slow</td><td>LLM calls are capped ~45s; if the provider times out the app falls back to rule-based results automatically. Retry or check your LLM key.</td></tr>
-          <tr><td>"Rule-based fallback" note inside the plan</td><td>AI was unavailable — the mitigation plan comes from built-in rules and may be less specific. Check your LLM key in Settings and retry with Mitigation Plan with AI / Scan with AI.</td></tr>
-          <tr><td>Story points show 0</td><td>Your Jira uses a custom field. Set it in Settings (<code>customfield_10102</code>-style); Test Connection verifies it.</td></tr>
-          <tr><td>A project fails the Test Connection check</td><td>Check the project key spelling and that your Jira account can browse that project.</td></tr>
+          <tr><td>"No active current sprints"</td><td>Start a sprint in Jira for the configured projects, then Sync Now.</td></tr>
+          <tr><td>Story points show 0</td><td>Your Jira uses a custom field. Set it in Settings (e.g. <code>customfield_10102</code>); Test Connection verifies it.</td></tr>
+          <tr><td>AI analysis fails or is slow</td><td>LLM calls cap at about 45s, then the app falls back to rule-based results. Retry or check your LLM key.</td></tr>
+          <tr><td>A project fails Test Connection</td><td>Check the key spelling and that your Jira account can browse the project.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h2>5. Good to know</h2>
-    <div class="card">
-      <ul>
-        <li>This is MVP software — avoid connecting production workspaces (see <a href="/privacy.html">privacy notice</a>).</li>
-        <li>One profile per browser. After you save a workspace connection it shows read-only; choose <strong>Edit Profile</strong> in Settings to change it. Your access token is kept only in this browser.</li>
-        <li>Deleting a profile in Settings erases its server-side data immediately.</li>
-      </ul>
-    </div>
+    <h2 id="appendix">9. Appendix A. Exact thresholds</h2>
+    <p>Use this to check any active-sprint score by hand. Every check follows the same three steps:</p>
+    <ol class="tight">
+      <li>Measure two things from Jira (listed in the table headers below).</li>
+      <li>Look up each measure to get a probability (1–5) and an impact (1–5).</li>
+      <li>Multiply them, then read the score and severity from the matrix in <a href="#scoring">section 4</a>.</li>
+    </ol>
+    <p class="sub-note">Each check below is open by default; click a name to collapse it.</p>
+    <details class="appendix" id="appendix-not-progressing" open>
+      <summary>📍 Not Progressing <span class="det-conf">Confidence <strong>85%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> An open ticket has had no update for over 24 hours.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Hours silent (counted from sprint start)</th><th scope="col">Score</th><th scope="col">Ticket size (story points)</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>24–47</td><td><strong>2</strong></td><td>≤1</td><td><strong>2</strong></td></tr>
+              <tr><td>48–95</td><td><strong>3</strong></td><td>2–3</td><td><strong>3</strong></td></tr>
+              <tr><td>96–167</td><td><strong>4</strong></td><td>4–5</td><td><strong>4</strong></td></tr>
+              <tr><td>168+</td><td><strong>5</strong></td><td>>5</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">+1 if the ticket is blocking other work (max 5).</p>
+        <p class="callout callout--fine">Example: A 3-pt ticket silent 50h, blocking another: <strong>P3 × I4 (3+1) = 12 → HIGH 70</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-sprint-not-started" open>
+      <summary>🚦 Sprint Not Started <span class="det-conf">Confidence <strong>90%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> The sprint is 2+ days old and no open ticket has left a start column (To Do / Backlog / Open).</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Share of sprint elapsed</th><th scope="col">Score</th><th scope="col">Open tickets</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>—</td><td><strong>2</strong></td><td>2 or fewer</td><td><strong>2</strong></td></tr>
+              <tr><td>up to 33%</td><td><strong>3</strong></td><td>3–5</td><td><strong>3</strong></td></tr>
+              <tr><td>34–66%</td><td><strong>4</strong></td><td>6–10</td><td><strong>4</strong></td></tr>
+              <tr><td>over 66%</td><td><strong>5</strong></td><td>over 10</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="callout callout--fine">Example: 50% of sprint gone, 4 tickets waiting: <strong>P4 × I3 = 12 → HIGH 70</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-burndown-behind" open>
+      <summary>📉 Burndown Behind <span class="det-conf">Confidence <strong>90%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> Progress is more than 10% behind the ideal line, once the sprint is 25% done.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Share of sprint still to run</th><th scope="col">Score</th><th scope="col">Gap behind ideal</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>50% or more</td><td><strong>2</strong></td><td>up to 15%</td><td><strong>2</strong></td></tr>
+              <tr><td>25–49%</td><td><strong>3</strong></td><td>15–30%</td><td><strong>3</strong></td></tr>
+              <tr><td>10–24%</td><td><strong>4</strong></td><td>30–50%</td><td><strong>4</strong></td></tr>
+              <tr><td>under 10%</td><td><strong>5</strong></td><td>over 50%</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">Then adjust by gap trend: one step down if the gap is shrinking fast, one up if it is flat or widening. With fewer than 2 past readings, widening is assumed.</p>
+        <p class="callout callout--fine">Example: 20% behind, 30% left, flat gap: <strong>P4 (3+1) × I3 = 12 → HIGH 70</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-qa-bottleneck" open>
+      <summary>🧪 QA Bottleneck <span class="det-conf">Confidence <strong>80%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> Two or more stories are waiting in a QA column.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Days to clear queue ÷ days left</th><th scope="col">Score</th><th scope="col">Stories in QA</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>0.5 or less</td><td><strong>1</strong></td><td>—</td><td><strong>1</strong></td></tr>
+              <tr><td>0.5–1.0</td><td><strong>2</strong></td><td>2</td><td><strong>2</strong></td></tr>
+              <tr><td>1.0–1.5</td><td><strong>3</strong></td><td>3–4</td><td><strong>3</strong></td></tr>
+              <tr><td>1.5–2.5</td><td><strong>4</strong></td><td>5–7</td><td><strong>4</strong></td></tr>
+              <tr><td>more than 2.5</td><td><strong>5</strong></td><td>over 7</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">Clearing speed is your history: tickets shipped out of QA per day over the last 3 sprints (default 1 a day).</p>
+<p class="sub-note">+1 if any story has been stuck over 24h (max 5).</p>
+        <p class="callout callout--fine">Example: 4 stories in QA, needing 1.2× the time left: <strong>P3 × I3 = 9 → MEDIUM 59</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-external-dep" open>
+      <summary>🔗 External Dep <span class="det-conf">Confidence <strong>75%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> A ticket is blocked by another ticket, or its text says it is waiting on or depends on someone.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Who you are waiting on</th><th scope="col">Score</th><th scope="col">Ticket size (story points)</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>—</td><td><strong>2</strong></td><td>≤1</td><td><strong>2</strong></td></tr>
+              <tr><td>Another internal team</td><td><strong>3</strong></td><td>2–3</td><td><strong>3</strong></td></tr>
+              <tr><td>Outside vendor, procurement, credentials</td><td><strong>4</strong></td><td>4–5</td><td><strong>4</strong></td></tr>
+              <tr><td>—</td><td><strong>5</strong></td><td>>5</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">+1 if the ticket is blocking other work (max 5).</p>
+        <p class="callout callout--fine">Example: Vendor blocking a 5-pt ticket: <strong>P4 × I4 = 16 → CRITICAL 82</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-due-date-passed" open>
+      <summary>⏰ Due Date Passed <span class="det-conf">Confidence <strong>85%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> An open ticket has a due date earlier than today.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Days overdue</th><th scope="col">Score</th><th scope="col">Ticket size (story points)</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>—</td><td><strong>2</strong></td><td>≤1</td><td><strong>2</strong></td></tr>
+              <tr><td>1–2</td><td><strong>3</strong></td><td>2–3</td><td><strong>3</strong></td></tr>
+              <tr><td>3–6</td><td><strong>4</strong></td><td>4–5</td><td><strong>4</strong></td></tr>
+              <tr><td>7+</td><td><strong>5</strong></td><td>>5</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">Every overdue ticket is listed; the card shows the worst.</p>
+        <p class="callout callout--fine">Example: 5-pt ticket 8 days late: <strong>P5 × I4 = 20 → CRITICAL 90</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-bug-raised" open>
+      <summary>🐛 Bug Raised <span class="det-conf">Confidence <strong>80%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> A defect was created during this sprint. Backlog bugs are ignored.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Situation</th><th scope="col">Score</th><th scope="col">Jira priority</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>P1 fixed, or lower-priority bug open</td><td><strong>2</strong></td><td>Low / Lowest</td><td><strong>2</strong></td></tr>
+              <tr><td>P1 open, fresh</td><td><strong>3</strong></td><td>Medium or unset</td><td><strong>3</strong></td></tr>
+              <tr><td>P1 open, older than half the sprint</td><td><strong>4</strong></td><td>High</td><td><strong>4</strong></td></tr>
+              <tr><td>P1 escaped to production</td><td><strong>5</strong></td><td>Highest</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">A production escape is a Highest-priority bug labelled <code>production</code> or <code>prod-escape</code>. Fixed P2–P4 bugs drop out.</p>
+        <p class="callout callout--fine">Example: Fresh Highest-priority bug, still open: <strong>P3 × I5 = 15 → CRITICAL 80</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-scope-creep" open>
+      <summary>📈 Scope Creep <span class="det-conf">Confidence <strong>75%</strong> (60% if baseline late)</span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> Work was added or estimates raised after the sprint started.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Always certain: it already happened</th><th scope="col">Score</th><th scope="col">Growth in total points</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>—</td><td><strong>2</strong></td><td>up to 10%</td><td><strong>2</strong></td></tr>
+              <tr><td>—</td><td><strong>3</strong></td><td>10–25%</td><td><strong>3</strong></td></tr>
+              <tr><td>—</td><td><strong>4</strong></td><td>25–50%</td><td><strong>4</strong></td></tr>
+              <tr><td>Any confirmed creep</td><td><strong>5</strong></td><td>over 50%</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<p class="sub-note">Never below 3 when work was added or re-estimated. Score is floored at 80, so confirmed creep is always CRITICAL.</p>
+        <p class="callout callout--fine">Example: Points grew 30%: <strong>P5 × I4 = 20 → CRITICAL 90</strong></p>
+      </div>
+    </details>
+
+    <details class="appendix" id="appendix-sprint-ended" open>
+      <summary>Sprint Ended Incomplete <span class="det-conf">Confidence <strong>90%</strong></span></summary>
+      <div class="appendix-body">
+        <p class="det-when"><strong>Fires when:</strong> The end date has passed but Jira still shows the sprint as active.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="colgroup" colspan="2">Probability</th><th scope="colgroup" colspan="2">Impact</th></tr>
+              <tr><th scope="col">Always certain: it already happened</th><th scope="col">Score</th><th scope="col">Share of work unfinished</th><th scope="col">Score</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>—</td><td><strong>1</strong></td><td>None (housekeeping only)</td><td><strong>1</strong></td></tr>
+              <tr><td>—</td><td><strong>2</strong></td><td>up to 10%</td><td><strong>2</strong></td></tr>
+              <tr><td>—</td><td><strong>3</strong></td><td>10–25%</td><td><strong>3</strong></td></tr>
+              <tr><td>—</td><td><strong>4</strong></td><td>25–50%</td><td><strong>4</strong></td></tr>
+              <tr><td>Sprint past its end date</td><td><strong>5</strong></td><td>over 50%</td><td><strong>5</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="callout callout--fine">Example: 30% of work unfinished: <strong>P5 × I4 = 20 → CRITICAL 90</strong></p>
+      </div>
+    </details>
+
   </main>
 
   <footer>
