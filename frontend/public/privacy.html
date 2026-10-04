@@ -155,7 +155,7 @@
       false positives, miss risks, or lack context.
     </div>
 
-    <p class="last-updated">Last updated: August 2026</p>
+    <p class="last-updated">Last updated: October 2026</p>
 
     <h2>1. What we store</h2>
     <div class="card">
@@ -212,10 +212,9 @@
         <li>Assignees are pseudonymized freshly for each request (John Smith → <code>dev-01</code>).</li>
         <li>Email addresses are scrubbed before analysis.</li>
       </ul>
-      <p>For sprint and follow-up analyses this scrubbing is applied to the full payload. The
-      executive stakeholder summary is built only from already-pseudonymized risk/mitigation
-      objects, so review its output before sharing externally — free-text names or details may
-      still appear. As noted above, pseudonymization is not anonymization.</p>
+      <p>For sprint and follow-up analyses this scrubbing is applied to the full payload. Review
+      AI-generated free-text outputs before sharing externally — names or other sensitive details
+      may still appear inside summaries/descriptions (pseudonymization is not anonymization).</p>
       <div class="notice" style="margin-bottom:0">
         <strong>Important:</strong> pseudonymization is not anonymization — names, customer information
         or other sensitive details may still appear inside free text (summaries/descriptions) and reach
