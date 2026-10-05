@@ -1,3 +1,6 @@
+import inspect
+import re
+
 from mitigation_agent import filter_false_external_deps
 from risk_components import bucket_severity, has_dependency_signal
 from snapshot import _build_radar_data
@@ -387,6 +390,219 @@ def test_risky_fallback_plan_keeps_the_urgent_timeline() -> None:
     assert plan["ai_used"] is False
     assert plan["timeline"] == "ASAP (within 24 hours)"
     assert "ASAP" not in plan["owner"]
+
+
+# --------------------------------------------------------------------- #
+# Ownership + escalation routing
+#
+# The OWNER field used to degrade to a bare role name ("Scrum Master
+# (escalate if needed)"), which is unusable at a standup: no escalation
+# target, no trigger, no timebox. These tests pin the three properties that
+# make an owner line actionable, for every risk type the engine emits.
+# --------------------------------------------------------------------- #
+
+# One representative risk payload per risk type RiskEngine.calculate_all_risks
+# can emit, with the diagnostic fields that type actually carries.
+_OWNER_SAMPLES: dict = {
+    "STORY_NOT_PROGRESSING": {
+        "issue_key": "PFIN-101", "hours_since_update": 72.0,
+        "status": "In Progress", "risk_score": 80,
+    },
+    "SPRINT_NOT_STARTED": {"days_elapsed": 3, "open_count": 14, "risk_score": 95},
+    "BURNDOWN_BEHIND": {
+        "burndown_gap_percent": 32.5, "remaining_sp": 44.0,
+        "issue_keys": ["PFIN-1", "PFIN-2"], "risk_score": 95,
+    },
+    "QA_BOTTLENECK": {
+        "qa_stories_count": 9, "stuck_stories": [{"key": "PFIN-3"}], "risk_score": 80,
+    },
+    "EXTERNAL_DEPENDENCY": {
+        "issue_key": "PFIN-9", "dependency_kind": "external", "risk_score": 75,
+    },
+    "DUE_DATE_PASSED": {"count": 3, "issue_keys": ["PFIN-4", "PFIN-5"], "risk_score": 90},
+    "BUG_RAISED": {"issue_key": "PFIN-20", "tier": "P1", "risk_score": 80},
+    "SCOPE_CREEP": {
+        "growth_percent": 42.0, "baseline_sp": 50, "current_sp": 71, "risk_score": 75,
+    },
+    "SPRINT_ENDED_INCOMPLETE": {
+        "remaining_sp": 30.0, "days_overdue": 4, "risk_score": 95,
+    },
+    "OVERLOADED": {"count": 6, "load_ratio": 2.4, "risk_score": 75},
+}
+
+# Vague escalation phrasing that must never survive in an owner line. The
+# owner *subject* being vague is covered separately by
+# test_owner_line_names_the_routed_accountable_role.
+_VAGUE_OWNER_PHRASES = (
+    "escalate if needed",
+    "escalate if required",
+    "escalate as necessary",
+    "if it persists",
+    "if required",
+    "as necessary",
+    "and escalate if",
+)
+
+
+def _owner_line(agent, risk_type: str, **overrides) -> str:
+    risk = {"type": risk_type, **_OWNER_SAMPLES[risk_type], **overrides}
+    return agent._fallback_owner([risk])
+
+
+def test_every_emitted_risk_type_has_an_owner_routing() -> None:
+    """No risk type may be missing from the routing tables — an unmapped type
+    is what let 4 of the 10 fall through to a bare role name."""
+    from mitigation_agent import _OWNER_ROLE
+    from risk_engine import RiskEngine
+
+    assert set(_OWNER_SAMPLES) == set(_OWNER_ROLE)
+    # Belt and braces: if a detector is ever added, this fails until it is routed.
+    src = inspect.getsource(RiskEngine)
+    emitted = set(re.findall(r'_emit\(\s*\n\s*"([A-Z_]+)"', src))
+    assert emitted, "could not detect emitted risk types from source"
+    assert emitted <= set(_OWNER_ROLE), emitted - set(_OWNER_ROLE)
+
+
+def test_owner_line_names_the_routed_accountable_role() -> None:
+    from mitigation_agent import _OWNER_ROLE
+
+    agent = _offline_agent()
+    for risk_type, role in _OWNER_ROLE.items():
+        line = _owner_line(agent, risk_type)
+        assert line.startswith(role), (risk_type, line)
+
+
+def test_owner_line_carries_a_concrete_escalation_path() -> None:
+    """Every type with an escalation target must name both the target and an
+    observable trigger. SCOPE_CREEP is deliberately exempt: scope is already
+    the Product Owner's call, so there is nothing above them to escalate to."""
+    from mitigation_agent import _ESCALATION
+
+    agent = _offline_agent()
+    for risk_type, (target, _trigger) in _ESCALATION.items():
+        line = _owner_line(agent, risk_type)
+        if target is None:
+            assert "escalate" not in line, (risk_type, line)
+            continue
+        assert "escalate to " in line, (risk_type, line)
+        assert target in line, (risk_type, line)
+
+
+def test_owner_line_has_urgency_in_the_escalation_trigger() -> None:
+    """The trigger after "escalate to" must be observable and time-bound.
+
+    This is the precise fix for "Scrum Master (escalate if needed)": a target
+    alone is not enough if the condition for handing it over is open-ended.
+    """
+    from mitigation_agent import _ESCALATION
+
+    agent = _offline_agent()
+    timebound = ("today", "standup", "end of day", "sprint end", "this week",
+                 "planning session", "before", "is not in test")
+    for risk_type, (target, _trigger) in _ESCALATION.items():
+        line = _owner_line(agent, risk_type)
+        if target is None:
+            assert "escalate" not in line, (risk_type, line)
+            continue
+        _head, sep, trigger = line.partition(", then escalate to ")
+        assert sep, (risk_type, line)
+        assert trigger.strip(), (risk_type, line)
+        low = line.lower()
+        for phrase in _VAGUE_OWNER_PHRASES:
+            assert phrase not in low, (risk_type, phrase, line)
+        assert any(t in low for t in timebound), (risk_type, line)
+
+
+def test_owner_line_never_defers_to_an_unnamed_actor() -> None:
+    """"hand it to someone" is a vague owner in the same way "escalate if
+    needed" is a vague trigger."""
+    agent = _offline_agent()
+    for risk_type in _OWNER_SAMPLES:
+        line = _owner_line(agent, risk_type)
+        assert "someone" not in line.lower(), (risk_type, line)
+        assert "anyone" not in line.lower(), (risk_type, line)
+
+
+def test_owner_line_is_free_of_semicolons() -> None:
+    """splitItems() in the frontend breaks owner text on ";", so a semicolon
+    would shred one action into fragments."""
+    agent = _offline_agent()
+    for risk_type in _OWNER_SAMPLES:
+        assert ";" not in _owner_line(agent, risk_type), risk_type
+
+
+def test_owner_line_quotes_real_diagnostics_not_just_a_role() -> None:
+    """The whole point over a bare role: the line must carry the evidence."""
+    agent = _offline_agent()
+    assert "PFIN-101" in _owner_line(agent, "STORY_NOT_PROGRESSING")
+    assert "72h" in _owner_line(agent, "STORY_NOT_PROGRESSING")
+    assert "32.5%" in _owner_line(agent, "BURNDOWN_BEHIND")
+    assert "44 SP" in _owner_line(agent, "BURNDOWN_BEHIND")
+    assert "P1" in _owner_line(agent, "BUG_RAISED")
+    assert "PFIN-9" in _owner_line(agent, "EXTERNAL_DEPENDENCY")
+    assert "2.4x" in _owner_line(agent, "OVERLOADED")
+    assert "50 → 71 SP" in _owner_line(agent, "SCOPE_CREEP")
+
+
+def test_owner_fallback_never_degrades_to_a_bare_role_name() -> None:
+    """An unmapped detector must still yield a role, an action and no empty
+    string — the old code returned None here and the caller substituted a
+    bare "Scrum Master"."""
+    agent = _offline_agent()
+    line = agent._fallback_owner([{"type": "BRAND_NEW_DETECTOR", "risk_score": 50}])
+    assert line.startswith("Scrum Master")
+    assert "brand new detector" in line
+    assert ";" not in line
+    assert agent._fallback_owner([]) == ""
+
+
+def test_owner_merge_keeps_top_two_risks_each_fully_routed() -> None:
+    agent = _offline_agent()
+    merged = agent._fallback_owner([
+        {"type": "BURNDOWN_BEHIND", **_OWNER_SAMPLES["BURNDOWN_BEHIND"], "risk_score": 95},
+        {"type": "QA_BOTTLENECK", **_OWNER_SAMPLES["QA_BOTTLENECK"], "risk_score": 80},
+        {"type": "BUG_RAISED", **_OWNER_SAMPLES["BUG_RAISED"], "risk_score": 40},
+    ])
+    assert "burndown" in merged
+    assert "QA" in merged
+    assert "P1" not in merged  # third-highest is dropped by design
+    assert ";" not in merged
+
+
+def test_extracted_ai_owner_defaults_to_an_actionable_line() -> None:
+    """An AI reply with no OWNER section used to fall back to "Scrum Master"."""
+    from mitigation_agent import _GENERIC_OWNER_TEXT
+
+    agent = _offline_agent()
+    assert agent._extract_owner("no sections here at all") == _GENERIC_OWNER_TEXT
+    assert agent._extract_owner("no sections here at all") != "Scrum Master"
+    # Real bullets still win, and "; " remains the bullet separator.
+    reply = "OWNER:\n- Tech Lead: unblock PFIN-1\n- Product Owner: cut scope\n\nTIMELINE:\n- today"
+    assert agent._extract_owner(reply) == "Tech Lead: unblock PFIN-1; Product Owner: cut scope"
+    # A semicolon leaked inside a bullet is neutralised, not passed through.
+    leaky = "OWNER:\n- Tech Lead: unblock PFIN-1; then re-test"
+    assert agent._extract_owner(leaky) == "Tech Lead: unblock PFIN-1, then re-test"
+
+
+def test_sprint_prompt_forbids_vague_owner_placeholders() -> None:
+    """The AI path is non-deterministic, so the prompt contract is what stops
+    "escalate if needed" coming back. Pin the instruction itself."""
+    from mitigation_agent import MitigationAgent
+    from config import UserConfig
+
+    agent = MitigationAgent(UserConfig())
+    prompt, _mapping = agent._build_sprint_prompt({
+        "sprint_key": "Sprint 9", "project_key": "PFIN", "risks": [], "issues": [],
+    })
+    assert "escalate to <Role> if <concrete trigger>" in prompt
+    assert "escalate if needed" in prompt  # named as the banned phrasing
+    assert "semicolons" in prompt
+    # The role routing table is in the prompt so the model picks from the same
+    # set the rule-based fallback uses.
+    from mitigation_agent import _OWNER_ROLE
+    for risk_type, role in _OWNER_ROLE.items():
+        assert risk_type in prompt, risk_type
+        assert role in prompt, role
 
 
 # --------------------------------------------------------------------- #

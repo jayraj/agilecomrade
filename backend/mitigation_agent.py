@@ -58,6 +58,75 @@ logger = logging.getLogger(__name__)
 # Matches Jira issue keys like MOS-21, PFIN-123
 JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9_]+-\d+)\b")
 
+# --------------------------------------------------------------------- #
+# Ownership + escalation routing
+# --------------------------------------------------------------------- #
+# Every risk the engine emits maps to one accountable role plus the role to
+# hand it to when the first owner can't clear it. Both the LLM prompt (so the
+# AI path names real roles) and the rule-based `_fallback_owner` read these,
+# so the two producers can never disagree on who owns what.
+#
+# Roles are titles, never Jira assignee names: prompts pseudonymize assignees
+# and the fallback deliberately avoids them, so naming people here would break
+# that contract and break on every org whose display names differ.
+_OWNER_ROLE: dict = {
+    "STORY_NOT_PROGRESSING": "Tech Lead",
+    "SPRINT_NOT_STARTED": "Scrum Master",
+    "BURNDOWN_BEHIND": "Scrum Master",
+    "QA_BOTTLENECK": "QA Lead",
+    "EXTERNAL_DEPENDENCY": "Scrum Master",
+    "DUE_DATE_PASSED": "Ticket Assignee",
+    "BUG_RAISED": "Tech Lead",
+    "SCOPE_CREEP": "Product Owner",
+    "SPRINT_ENDED_INCOMPLETE": "Scrum Master",
+    "OVERLOADED": "Scrum Master",
+}
+
+# Escalation target + the concrete trigger that fires it. A `None` target
+# means the role is already the top of the chain for that risk (scope is the
+# Product Owner's call to make), so the clause is omitted rather than invented.
+_ESCALATION: dict = {
+    "STORY_NOT_PROGRESSING": ("Scrum Master", "there is still no update by the next standup"),
+    "SPRINT_NOT_STARTED": ("Product Owner", "the sprint goal is not started by the next standup"),
+    "BURNDOWN_BEHIND": ("Product Owner", "the re-plan does not close the gap this week"),
+    "QA_BOTTLENECK": ("Scrum Master", "the queue is not shrinking by the next standup"),
+    "EXTERNAL_DEPENDENCY": ("Product Owner", "the dependency is still unresolved at end of day"),
+    "DUE_DATE_PASSED": ("Scrum Master", "the ticket is still open at end of day"),
+    "BUG_RAISED": ("Scrum Master", "the fix is not in test before sprint end"),
+    "SCOPE_CREEP": (None, None),
+    "SPRINT_ENDED_INCOMPLETE": ("Delivery Manager", "the recovery plan is not agreed in the next planning session"),
+    "OVERLOADED": ("Product Owner", "capacity is still short after rebalancing"),
+}
+
+# Used when a risk type is unknown (new detector) or the AI reply omits OWNER
+# entirely. Still has to name an action, a target and a timebox, because a
+# bare "Scrum Master" gives the standup nothing to work with.
+_GENERIC_OWNER_ROLE = "Scrum Master"
+_GENERIC_OWNER_TEXT = (
+    "Scrum Master: own the highest-scoring risk in this plan and escalate to "
+    "Product Owner if it is not resolved by the next standup"
+)
+
+
+def owner_clause(risk_type: str) -> str:
+    """Build the trailing escalation clause for a risk type.
+
+    Returns e.g. `", then escalate to Product Owner if it is still unresolved
+    at end of day."` — or an empty string for types with no escalation target,
+    so callers never emit a dangling "escalate to" with nothing after it.
+    """
+    target, trigger = _ESCALATION.get(risk_type, (None, None))
+    if not target or not trigger:
+        return ""
+    return f", then escalate to {target} if {trigger}"
+
+
+def _humanize_type(risk_type: str) -> str:
+    """`STORY_NOT_PROGRESSING` -> `story not progressing risk`, for the
+    unmapped-detector fallback line."""
+    words = str(risk_type or "unclassified").replace("_", " ").lower()
+    return f"{words} risk"
+
 
 class OpenRouterModel:
     """Minimal OpenAI-style wrapper around OpenRouter's chat completions endpoint."""
@@ -324,7 +393,7 @@ class MitigationAgent:
                 owner = "Scrum Master — no risks detected, Please proactively keep assessing."
                 timeline = "Keep checking (reassess at the next standup)"
             else:
-                owner = self._fallback_owner(risks) or "Scrum Master"
+                owner = self._fallback_owner(risks) or _GENERIC_OWNER_TEXT
                 timeline = "ASAP (within 24 hours)"
             return {
                 "sprint_key": sprint_key,
@@ -364,71 +433,141 @@ class MitigationAgent:
         return " | ".join(parts)
 
     def _fallback_owner(self, risks):
-        """Compose a Scrum-Master-coordination owner message for the rule-based
-        fallback, naming each risk's cause and the recovery lever (built from
-        the diagnostic fields already on each risk object). Merge the top two
-        risks by risk_score; assignee names are intentionally not used."""
+        """Compose an owner message for the rule-based fallback: for each risk,
+        name the accountable role from `_OWNER_ROLE`, the cause (built from the
+        diagnostic fields already on the risk object), the recovery lever, and
+        the escalation path from `_ESCALATION`. Merge the top two risks by
+        risk_score.
+
+        Every risk type the engine emits is covered so this can never collapse
+        to a bare role name. Two invariants the UI depends on: no semicolons
+        (`splitItems()` in the frontend breaks owner text on ";") and no
+        open-ended "escalate if needed" (the whole point of the escalation
+        clause is the concrete trigger after it). Assignee names are
+        intentionally not used — roles only.
+        """
         if not risks:
             return ""
+
         def phrase(r):
             rtype = r.get("type")
-            if rtype == "BURNDOWN_BEHIND":
-                gap = r.get("burndown_gap_percent")
-                sp = r.get("remaining_sp")
-                count = len(r.get("issue_keys") or [])
-                gap_txt = f"{gap:.1f}%" if gap is not None else "the gap"
-                sp_txt = f"{sp:.0f} SP" if sp is not None else "work"
-                count_txt = f"{count} open items" if count else "open items"
+            role = _OWNER_ROLE.get(rtype, _GENERIC_OWNER_ROLE)
+            esc = owner_clause(rtype)
+            # Unknown type: still emit a role, an action and an escalation
+            # target so an unmapped detector still produces a usable standup
+            # line rather than nothing.
+            body = self._owner_body(r, rtype)
+            if body is None:
+                if rtype in _OWNER_ROLE:
+                    return None
                 return (
-                    f"Scrum Master — burndown is {gap_txt} behind: {sp_txt} / "
-                    f"{count_txt} still incomplete. Re-plan capacity and "
-                    f"reprioritize remaining work to get back on track."
+                    f"{role}: own the {_humanize_type(rtype)} and drive it to a "
+                    f"decision today{esc}"
                 )
-            if rtype == "QA_BOTTLENECK":
-                n = r.get("qa_stories_count") or 0
-                stuck = len(r.get("stuck_stories") or [])
-                stuck_txt = f" ({stuck} stuck >24h)" if stuck else ""
-                return (
-                    f"Scrum Master — {n} stories are in QA review{stuck_txt}. "
-                    f"Balance QA load or add review capacity to clear the queue."
-                )
-            if rtype == "BUG_RAISED":
-                key = r.get("issue_key") or "a bug"
-                tier = r.get("tier") or ""
-                tier_txt = f" ({tier})" if tier else ""
-                return (
-                    f"Scrum Master — coordinate the fix for {key}{tier_txt} so it's "
-                    f"addressed before sprint end and doesn't break DoD."
-                )
-            if rtype == "SCOPE_CREEP":
-                growth = r.get("growth_percent")
-                growth_txt = f"{growth:.0f}%" if growth is not None else "beyond plan"
-                baseline = r.get("baseline_sp")
-                current = r.get("current_sp")
-                if baseline is not None and current is not None:
-                    delta_txt = f"{baseline:.0f} → {current:.0f} SP"
-                else:
-                    delta_txt = "plan"
-                return (
-                    f"Scrum Master — scope grew {growth_txt} vs planning "
-                    f"({delta_txt}). Renegotiate scope with stakeholders rather "
-                    f"than absorbing extra work."
-                )
-            if rtype == "SPRINT_ENDED_INCOMPLETE":
-                return (
-                    "Scrum Master — sprint ended with work incomplete. Recover "
-                    "remaining scope or close out with a clear plan."
-                )
-            if rtype == "SPRINT_NOT_STARTED":
-                return (
-                    "Scrum Master — sprint hasn't started. Resolve blockers and "
-                    "kick off to protect the sprint goal."
-                )
-            return None
+            return f"{role} — {body}{esc}"
 
         ordered = sorted(risks, key=lambda r: r.get("risk_score", 0), reverse=True)
         parts = [p for r in ordered[:2] if (p := phrase(r))]
         return " | ".join(parts) if parts else ""
+
+    def _owner_body(self, r, rtype):
+        """The cause + recovery lever for one risk type, without the role or
+        escalation clause. Returns None only for types outside `_OWNER_ROLE`
+        that have no bespoke phrasing."""
+        if rtype == "STORY_NOT_PROGRESSING":
+            key = r.get("issue_key") or "a story"
+            hours = r.get("hours_since_update")
+            status = r.get("status")
+            stalled_txt = f" in {hours:g}h" if hours is not None else ""
+            status_txt = f" (still {status})" if status else ""
+            return (
+                f"{key} has had no update{stalled_txt}{status_txt}. Find the "
+                f"blocker and either clear it or reassign the story so it can "
+                f"still land this sprint"
+            )
+        if rtype == "SPRINT_NOT_STARTED":
+            elapsed = r.get("days_elapsed")
+            open_count = r.get("open_count")
+            elapsed_txt = f"{elapsed}d ago" if elapsed is not None else "recently"
+            count_txt = f"{open_count}" if open_count is not None else "several"
+            return (
+                f"the sprint started {elapsed_txt} and {count_txt} tickets are "
+                f"still not In Progress. Get the sprint goal started today or "
+                f"re-plan the scope"
+            )
+        if rtype == "BURNDOWN_BEHIND":
+            gap = r.get("burndown_gap_percent")
+            sp = r.get("remaining_sp")
+            count = len(r.get("issue_keys") or [])
+            gap_txt = f"{gap:.1f}%" if gap is not None else "the gap"
+            sp_txt = f"{sp:.0f} SP" if sp is not None else "work"
+            count_txt = f"{count} open items" if count else "open items"
+            return (
+                f"burndown is {gap_txt} behind: {sp_txt} / {count_txt} still "
+                f"incomplete. Re-plan capacity and reprioritize what is left"
+            )
+        if rtype == "QA_BOTTLENECK":
+            n = r.get("qa_stories_count") or 0
+            stuck = len(r.get("stuck_stories") or [])
+            stuck_txt = f" ({stuck} stuck over 24h)" if stuck else ""
+            return (
+                f"{n} stories are sitting in QA review{stuck_txt}. Rebalance QA "
+                f"load or add review capacity to clear the queue"
+            )
+        if rtype == "EXTERNAL_DEPENDENCY":
+            key = r.get("issue_key") or "a story"
+            kind = str(r.get("dependency_kind") or "external").replace("_", " ").lower()
+            return (
+                f"{key} is waiting on an {kind} dependency. Chase the owning "
+                f"team for a committed date today"
+            )
+        if rtype == "DUE_DATE_PASSED":
+            count = r.get("count") or len(r.get("issue_keys") or []) or 0
+            keys = r.get("issue_keys") or []
+            keys_txt = f" ({', '.join(keys[:3])})" if keys else ""
+            return (
+                f"{count} ticket(s) are past their due date{keys_txt}. "
+                f"Re-confirm a real commit date with the owner today"
+            )
+        if rtype == "BUG_RAISED":
+            key = r.get("issue_key") or "a bug"
+            tier = r.get("tier") or ""
+            tier_txt = f" ({tier})" if tier else ""
+            return (
+                f"coordinate the fix for {key}{tier_txt} so it lands before "
+                f"sprint end and does not break the DoD"
+            )
+        if rtype == "SCOPE_CREEP":
+            growth = r.get("growth_percent")
+            growth_txt = f"{growth:.0f}%" if growth is not None else "beyond plan"
+            baseline = r.get("baseline_sp")
+            current = r.get("current_sp")
+            if baseline is not None and current is not None:
+                delta_txt = f"{baseline:.0f} → {current:.0f} SP"
+            else:
+                delta_txt = "plan"
+            return (
+                f"scope grew {growth_txt} vs planning ({delta_txt}). Renegotiate "
+                f"scope with stakeholders rather than absorbing extra work"
+            )
+        if rtype == "SPRINT_ENDED_INCOMPLETE":
+            sp = r.get("remaining_sp")
+            days_overdue = r.get("days_overdue")
+            sp_txt = f"{sp:.0f} SP" if sp is not None else "work"
+            late_txt = f" {days_overdue}d late" if days_overdue else ""
+            return (
+                f"the sprint ended{late_txt} with {sp_txt} incomplete. Agree a "
+                f"recovery plan or close the items out explicitly"
+            )
+        if rtype == "OVERLOADED":
+            count = r.get("count") or 0
+            ratio = r.get("load_ratio")
+            ratio_txt = f"{ratio:.1f}x" if ratio is not None else "well above"
+            return (
+                f"one owner holds {count} tickets at {ratio_txt} the team "
+                f"average. Rebalance the load before it throttles delivery"
+            )
+        return None
 
 
     def _risk_type_for_issue(self, risks, issue_key):
@@ -478,6 +617,9 @@ Sprint Tickets:
 
 Each ticket includes a "due_date" (YYYY-MM-DD, null if unset). Treat a ticket whose due_date is today or past and not Done as DUE_DATE_PASSED, and prioritize mitigation of those tickets.
 
+Use this ownership routing for the OWNER section (risk type -> accountable role). Prefer the role listed for the risk you are covering, and only deviate when the sprint data clearly justifies it:
+{json.dumps(_OWNER_ROLE, indent=2)}
+
 Provide mitigation suggestions using EXACTLY these section headers, one per line, in this order:
 
 ACTION ITEMS:
@@ -486,7 +628,7 @@ ACTION ITEMS:
 - <specific, actionable step 3>
 
 OWNER:
-- <Role or Person>: <what they are responsible for>
+- <Accountable Role>: <the one action they must take> (escalate to <Role> if <concrete trigger>, by <timebox>)
 
 TIMELINE:
 - <when>: <what happens by then>
@@ -503,6 +645,13 @@ Rules:
 - Each bullet line must start with "- ".
 - Keep the plan concise and practical for a team standup.
 - Every section must be present, even if brief.
+- OWNER rules (these decide whether the plan is usable at a standup):
+  - Name one specific accountable ROLE per bullet, and make it the most specific role that can actually act. Prefer "Ticket Assignee" for a single blocked ticket, "Tech Lead" or "QA Lead" for a craft or capacity problem, and "Product Owner" for anything about scope or priority. Use "Scrum Master" only for genuine coordination, facilitation, or replanning.
+  - Never use vague owners such as "the team", "someone", "the dev", or "engineering".
+  - Every owner bullet must state a concrete escalation path: the target role AND the observable trigger that fires it, e.g. "escalate to Product Owner if the dependency is still unresolved at end of day".
+  - Never write open-ended placeholders like "escalate if needed", "escalate if required", "escalate as necessary", or "if it persists". State the exact condition that triggers escalation, otherwise the bullet will be rewritten as a vague one.
+  - Give each owner a timebox so it can be verified at the next standup.
+  - Do not use semicolons (";") anywhere inside a bullet — the UI splits owner text on semicolons, so they would break one action into fragments.
 """
         return prompt, prompt_mapping
 
@@ -539,8 +688,20 @@ Rules:
         return self._extract_bullets(self._extract_section(text, "ACTION ITEMS:"))[:5]
 
     def _extract_owner(self, text):
+        """Pull the OWNER bullets out of the model reply.
+
+        Bullets are joined with "; " because the frontend's `splitItems()`
+        turns each one into its own <li>. Never fall back to a bare role name
+        (the old "Scrum Master") — a role with no action, escalation target or
+        timebox gives the standup nothing, which is the exact failure this
+        replaced.
+        """
         owners = self._extract_bullets(self._extract_section(text, "OWNER:"))
-        return "; ".join(owners) if owners else "Scrum Master"
+        # ";" is the bullet separator for the whole section, so a semicolon the
+        # model leaks inside a bullet would split one action into fragments.
+        # The prompt bans them; this enforces it rather than trusting that.
+        owners = [o.replace(";", ",") for o in owners]
+        return "; ".join(owners) if owners else _GENERIC_OWNER_TEXT
 
     def _extract_timeline(self, text):
         items = self._extract_bullets(self._extract_section(text, "TIMELINE:"))
