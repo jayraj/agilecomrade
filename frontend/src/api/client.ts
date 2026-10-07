@@ -16,6 +16,10 @@ export const apiErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as { error?: string } | undefined
     if (data?.error) return data.error
+    if (!error.response) {
+      if (error.code === 'ECONNABORTED') return error.message // request timeout
+      return `Backend unreachable at ${API_BASE} — start it with: cd backend && ./venv/bin/python main.py`
+    }
     return error.message || `Request failed with status code ${error.response?.status ?? 500}`
   }
   return error instanceof Error ? error.message : 'Request failed'

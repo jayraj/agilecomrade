@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import axios from 'axios'
 import { apiSnapshot, type Snapshot } from '../api/client'
 import { profileApi } from '../api/config'
 import { loadOfflineSnapshot, saveOfflineSnapshot } from '../utils/offlineCache'
@@ -59,6 +60,15 @@ const applySnapshot = (data: Snapshot): void => {
   }
 }
 
+/** Auth failures mean the profile row/token is gone server-side — not a
+ *  connectivity problem, so they must not be reported as "offline". */
+const authErrorMessage = (err: unknown, slug: string): string | null => {
+  if (!axios.isAxiosError(err)) return null
+  const status = err.response?.status
+  if (status !== 401 && status !== 403) return null
+  return `Profile "${slug}" was removed or its access token is no longer valid — reconnect it in Settings`
+}
+
 const doFetch = (): Promise<void> => {
   if (!activeSlug) return Promise.resolve()
   if (inflight) return inflight
@@ -69,6 +79,11 @@ const doFetch = (): Promise<void> => {
       applySnapshot(data)
       void saveOfflineSnapshot(activeSlug, data)
     } catch (err) {
+      const authError = authErrorMessage(err, activeSlug)
+      if (authError) {
+        setStore({ error: authError, offline: false, loading: false })
+        return
+      }
       const cached = await loadOfflineSnapshot(activeSlug)
       if (cached) {
         setStore({

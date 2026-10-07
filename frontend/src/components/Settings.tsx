@@ -157,7 +157,15 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
       setAccessToken('')
       setMode(asEdit ? 'edit' : 'view')
     } catch (error) {
-      setMessage({ kind: 'err', text: apiErrorMessage(error) })
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 401 || status === 403) {
+        setMessage({
+          kind: 'err',
+          text: `Profile '${slug}' is not on the server anymore — fill in the form and Save to recreate it.`,
+        })
+      } else {
+        setMessage({ kind: 'err', text: apiErrorMessage(error) })
+      }
     }
   }
 
@@ -235,12 +243,49 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           story_points_field: form.story_points_field,
         }
         if (accessToken) body.access_token = accessToken
-        const updateResponse = await apiUpdateProfile(currentSlug, body)
-        if (updateResponse.access_token) {
-          const list = profileApi.list().map((p) => (p.slug === currentSlug ? { ...p, token: updateResponse.access_token! } : p))
-          profileApi.save(list)
+        try {
+          const updateResponse = await apiUpdateProfile(currentSlug, body)
+          if (updateResponse.access_token) {
+            const list = profileApi.list().map((p) => (p.slug === currentSlug ? { ...p, token: updateResponse.access_token! } : p))
+            profileApi.save(list)
+          }
+          setMessage({ kind: 'ok', text: `Profile '${currentSlug}' updated.` })
+        } catch (error) {
+          const status = (error as { response?: { status?: number } })?.response?.status
+          if (status !== 401 && status !== 403) throw error
+          // The profile row no longer exists server-side (deleted outside this
+          // browser), so the auth-gated PUT can never succeed. Re-create it
+          // with the same slug — which needs the Jira token back in the form.
+          if (!form.jira_api_token.trim()) {
+            setFieldErrors({
+              jira_api_token: "Profile was removed from the server — re-enter the Jira API token to recreate it",
+            })
+            setMessage({
+              kind: 'err',
+              text: `Profile '${currentSlug}' is not on the server anymore — re-enter the Jira API token and save again.`,
+            })
+            return
+          }
+          let response: { access_token: string }
+          try {
+            response = await apiCreateProfile({ slug: currentSlug, access_token: token, ...body })
+          } catch (createError) {
+            const createStatus = (createError as { response?: { status?: number } })?.response?.status
+            if (createStatus !== 409) throw createError
+            // Row exists but our token doesn't match it — no way to recover the
+            // old token (only its hash is stored), so a new slug is required.
+            setMessage({
+              kind: 'err',
+              text: `Profile '${currentSlug}' exists on the server but this browser's access token is no longer valid — create a profile with a different slug.`,
+            })
+            return
+          }
+          profileApi.add({ slug: currentSlug, token: response.access_token })
+          setMessage({
+            kind: 'ok',
+            text: `Profile '${currentSlug}' was missing on the server — recreated with a new access token.`,
+          })
         }
-        setMessage({ kind: 'ok', text: `Profile '${currentSlug}' updated.` })
       } else {
         const response = await apiCreateProfile({
           slug: form.slug,
