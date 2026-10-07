@@ -365,7 +365,6 @@ def index():
             "/api/next-sprint-risks",
             "/api/next-sprint-issues",
             "/api/generate-followup-message",
-            "/api/stakeholder-report",
         ],
     }
 
@@ -972,21 +971,6 @@ def generate_followup_message(request: Request, body: dict = None):
     result["issue_key"] = issue_key
     logger.info(f"⏱️ generate_followup_message | snapshot-rebuild llm={time.time() - t0:.2f}s issue={issue_key}")
     return result
-
-
-@app.get("/api/stakeholder-report")
-def stakeholder_report(request: Request):
-    row, error = _auth(request)
-    if error:
-        return error
-
-    snapshot, config = _get_or_refresh_snapshot(row)
-    agent = MitigationAgent(config)
-    report = agent.generate_stakeholder_report(
-        snapshot.get("risks", []),
-        snapshot.get("mitigations", []),
-    )
-    return {"report": report, "generated_at": datetime.utcnow().isoformat()}
 
 
 if __name__ == "__main__":

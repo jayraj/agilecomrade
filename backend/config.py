@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
-    # Encryption key for API keys at rest (AES-GCM via Fernet). Generate one
-    # with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Encryption key for API keys at rest (Fernet: AES-128-CBC + HMAC-SHA256).
+    # Generate one with:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     encryption_key: str = ""
 
     # Comma-separated allowed CORS origins (the deployed frontend URL).

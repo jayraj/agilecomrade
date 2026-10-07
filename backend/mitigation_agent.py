@@ -932,35 +932,3 @@ Rules:
                 except Exception:
                     return []
             return []
-
-    def generate_stakeholder_report(self, risks, mitigations, sprint_data=None):
-        report_mapping = {}
-        prompt = f"""
-You are creating a Sprint Status Report for Product Owners and Executives.
-
-Total Risks Identified: {len(risks)}
-Critical Severity Risks: {len([r for r in risks if r.get('severity') == 'CRITICAL'])}
-High Severity Risks: {len([r for r in risks if r.get('severity') == 'HIGH'])}
-Medium Severity Risks: {len([r for r in risks if r.get('severity') == 'MEDIUM'])}
-
-Risks Summary:
-{json.dumps(deep_pseudonymize(risks[:5], report_mapping), indent=2, default=str)}
-
-Mitigations Proposed:
-{json.dumps(deep_pseudonymize(mitigations[:5], report_mapping), indent=2, default=str)}
-
-Generate a 3-paragraph executive summary:
-1. Current Sprint Status (one sentence)
-2. Key Risks & Impact (2-3 risks)
-3. Mitigation Plan & Next Steps
-
-Make it suitable for a 5-minute stakeholder update. Be direct and actionable.
-"""
-
-        try:
-            response = self._generate_with_model(prompt)
-            logger.info(f"AI report | source=LLM | provider={self.provider}")
-            return restore_aliases(response.text, report_mapping)
-        except Exception as e:
-            logger.error(f"AI report | source=rule-based | provider={self.provider} | error={e}")
-            return f"Unable to generate report. {len(risks)} risks detected, manual review required."

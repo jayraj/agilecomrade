@@ -459,9 +459,9 @@ def run():
                          1 if "bob@corp.com" not in scrubbed and "[email]" in scrubbed else 0, 1, tol=0))
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mitigation_agent.py")).read()
     wired = src.count("sanitize_issue_for_prompt(") >= 2  # sprint + next-sprint prompt builders
-    restored = src.count("restore_aliases(") >= 2  # followup + sprint-plan/report restores
-    deep = "deep_pseudonymize(risks[:5]" in src and "deep_pseudonymize(mitigations[:5]" in src
-    results.append(check("Privacy: sanitization wired at all prompt sites + followup restore + report deep-scan",
+    restored = src.count("restore_aliases(") >= 2  # followup + sprint-plan restores
+    deep = "deep_scrub_text(deep_pseudonymize(" in src  # sprint-plan risks deep-scan
+    results.append(check("Privacy: sanitization wired at all prompt sites + followup restore + sprint-plan deep-scan",
                          1 if (wired and restored and deep) else 0, 1, tol=0))
     # AI fallback payloads must carry a classified reason so the UI can
     # explain the substitution instead of a generic warning.
@@ -491,9 +491,8 @@ def run():
     results.append(check("Privacy: alias restore is case-insensitive and complete",
                          1 if rt_restore_ok else 0, 1, tol=0))
     sprint_restored = "restore_aliases(response.text, prompt_mapping)" in src
-    report_restored = "restore_aliases(response.text, report_mapping)" in src
-    results.append(check("Privacy: sprint plan + stakeholder report restore real names before display",
-                         1 if (sprint_restored and report_restored) else 0, 1, tol=0))
+    results.append(check("Privacy: sprint plan restores real names before display",
+                         1 if sprint_restored else 0, 1, tol=0))
 
     # ------------------------------------------------------------------ #
     # STORY_NOT_PROGRESSING (sprint-clamped staleness)

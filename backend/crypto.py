@@ -1,4 +1,4 @@
-"""Crypto helpers: AES-GCM (Fernet) for API keys at rest, SHA-256 for tokens."""
+"""Crypto helpers: Fernet (AES-128-CBC + HMAC-SHA256) for API keys at rest, SHA-256 for tokens."""
 
 import hashlib
 

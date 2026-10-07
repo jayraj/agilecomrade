@@ -146,4 +146,3 @@ Review 1.3 · Blocked 1.4.
 | `POST /api/next-sprint-risks` | profile | Pre-planning AI risk analysis |
 | `POST /api/next-sprint-issues` | profile | Planned work items |
 | `POST /api/generate-followup-message` | profile | Draft a follow-up to an assignee |
-| `GET /api/stakeholder-report` | profile | Executive summary |

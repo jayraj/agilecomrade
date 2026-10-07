@@ -2,8 +2,9 @@
 -- Run this in the Supabase SQL Editor.
 --
 -- One row per scrum master / client profile. API keys are stored encrypted
--- (AES-GCM) and the access token only as a SHA-256 hash. The backend owns all
--- reads/writes using the service-role key, so there are NO anon policies.
+-- (Fernet: AES-128-CBC + HMAC-SHA256) and the access token only as a SHA-256
+-- hash. The backend owns all reads/writes using the service-role key, so
+-- there are NO anon policies.
 
 create table if not exists public.profiles (
   slug                  text primary key,
