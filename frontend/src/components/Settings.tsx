@@ -235,7 +235,11 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           story_points_field: form.story_points_field,
         }
         if (accessToken) body.access_token = accessToken
-        await apiUpdateProfile(currentSlug, body)
+        const updateResponse = await apiUpdateProfile(currentSlug, body)
+        if (updateResponse.access_token) {
+          const list = profileApi.list().map((p) => (p.slug === currentSlug ? { ...p, token: updateResponse.access_token! } : p))
+          profileApi.save(list)
+        }
         setMessage({ kind: 'ok', text: `Profile '${currentSlug}' updated.` })
       } else {
         const response = await apiCreateProfile({

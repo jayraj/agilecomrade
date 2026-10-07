@@ -131,7 +131,8 @@ export function useSnapshot(syncIntervalSeconds: number, refreshKey = 0): Snapsh
   const slug = active?.slug
 
   useEffect(() => {
-    if (!slug) {
+    const profiles = profileApi.list()
+    if (!slug || !profiles.some((p) => p.slug === slug)) {
       setStore({ noProfile: true, snapshot: null, loading: false, error: null, offline: false })
       stopPolling()
       return
