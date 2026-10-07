@@ -79,8 +79,10 @@ export default function App() {
       {!disclaimerDismissed && (
         <div className="disclaimer-banner" role="note">
           <span>
-            ⚠️ MVP demo — sprint data (including assignee names &amp; issue text) is sent to third-party AI
-            (Gemini/OpenRouter) for analysis. Avoid connecting sensitive or production Jira workspaces.{' '}
+            ⚠️ MVP demo — this app stores your sprint data (including assignee names &amp; issue text) on
+            the server, and sends it to third-party AI (Gemini/OpenRouter) for analysis only when you use an
+            AI feature (Mitigate / Scan / Draft). Never in normal sync. Avoid connecting sensitive or
+            production Jira workspaces.{' '}
             <a href="/privacy.html" target="_blank" rel="noreferrer">Learn more →</a>
           </span>
           <button

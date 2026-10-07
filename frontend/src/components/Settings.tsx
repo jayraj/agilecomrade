@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, PlugZap, Save, X, Globe, Cpu, PenLine } from 'lucide-react'
+import { ArrowLeft, Lock, PlugZap, Save, X, Globe, Cpu, PenLine } from 'lucide-react'
 import {
   apiConfigDefaults,
   apiCreateProfile,
@@ -420,7 +420,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
 
         <div className="form-grid">
           <label>
-            LLM provider
+            LLM provider <em>(optional — skip for rule-based only)</em>
             <select value={form.llm_provider} onChange={(e) => switchProvider(e.target.value)} disabled={readOnly}>
               <option value="gemini">Gemini</option>
               <option value="openrouter">OpenRouter</option>
@@ -436,7 +436,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
             />
           </label>
           <label className="form-full">
-            LLM API key {isEdit && <em>(blank = keep current)</em>}
+            LLM API key {isEdit ? <em>(blank = keep current)</em> : <em>(optional — blank disables AI analysis)</em>}
             <input
               value={form.llm_api_key}
               onChange={(e) => set('llm_api_key')(e.target.value)}
@@ -448,18 +448,41 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           </label>
         </div>
 
-        <p className="token-note llm-data-note">
-          On Gemini's <strong>free tier</strong>, Google may use submitted prompts for product improvement —
-          use a paid-tier key if that's unacceptable. For OpenRouter, prefer providers with a
-          no-training / zero-retention policy. Issue text may still reach the provider (assignees are pseudonymized).
-        </p>
-
-        <p className="token-note privacy-note">
-          Saving shares this workspace's sprint data (assignee names, issue summaries and descriptions) with your
-          chosen AI provider for analysis. Nothing is ever written back to Jira — follow-up messages are generated for
-          you to copy and paste manually. See the{' '}
-          <a href="/privacy.html" target="_blank" rel="noreferrer">privacy notice</a>.
-        </p>
+        <details className="privacy-disclosure">
+          <summary className="privacy-summary">
+            <Lock size={14} strokeWidth={2} />
+            <span>
+              Save syncs this workspace&rsquo;s sprint data so risk scoring works, and stores it
+              securely. AI is used only when you click&nbsp;Mitigate / Scan / Draft — never on its own.
+            </span>
+          </summary>
+          <div className="privacy-disclosure-body">
+            <p>
+              <strong>What Save does:</strong> it fetches and stores this workspace&rsquo;s sprint
+              data (assignee names, issue summaries and descriptions) so the radar can score risks.
+              It is encrypted on the server and cached in your browser. Only your Jira and LLM keys are
+              kept server-side — everything else your browser saves is an access token, not the keys.
+            </p>
+            <p>
+              <strong>When AI sees your data:</strong> never from Save alone. Sprint data reaches your
+              AI provider only afterwards, when you click{' '}
+              <strong>Mitigation Plan with AI</strong>, <strong>Scan with AI</strong>, or{' '}
+              <strong>Draft Message</strong> — and never automatically. Jira stays read-only; any
+              follow-up message is a draft you copy and paste manually.
+            </p>
+            <p>
+              <strong>Want no AI at all?</strong> Leave the LLM API key blank — risk scoring and every
+              non-AI feature keep working fully rule-based. You can add a key later from this screen.
+            </p>
+            <p className="privacy-warning">
+              On Gemini&rsquo;s <strong>free tier</strong>, Google may use submitted prompts for product
+              improvement — use a paid-tier key if that&rsquo;s unacceptable. For OpenRouter, prefer
+              providers with a no-training / zero-retention policy. Issue text may still reach the
+              provider (assignees are pseudonymized). See the{' '}
+              <a href="/privacy.html" target="_blank" rel="noreferrer">privacy notice</a>.
+            </p>
+          </div>
+        </details>
 
         <div className="form-actions">
           {!isView && (
