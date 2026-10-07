@@ -226,7 +226,9 @@ export default function RiskCardItem({
             {cause.head && cause.confidence && ' '}
             {cause.confidence}
             {cause.head && ' '}
-            <a href="/user-guide.html#scoring">Risk score reference</a>
+            <a href="/user-guide.html#scoring" target="_blank" rel="noreferrer">
+              Risk score reference
+            </a>
           </p>
         </div>
       )}
