@@ -30,14 +30,10 @@ export default function VelocityTrend({ velocity }: VelocityTrendProps) {
   const { syncIntervalSeconds, refreshKey } = useSync()
   const { snapshot, loading, noProfile } = useSnapshot(syncIntervalSeconds, refreshKey)
 
-  if (noProfile) {
-    return <EmptyDashboard />
-  }
-
-  const data = velocity ?? snapshot?.velocity ?? {}
-
   // Some mobile browsers don't fire a resize after orientation change,
   // leaving Chart.js canvases at their pre-rotation width.
+  // Declared before the noProfile early return: hook order must not change
+  // when a profile appears or disappears (deleting one flips noProfile live).
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
     const trigger = () => {
@@ -52,6 +48,12 @@ export default function VelocityTrend({ velocity }: VelocityTrendProps) {
       window.removeEventListener('orientationchange', trigger)
     }
   }, [])
+
+  if (noProfile) {
+    return <EmptyDashboard />
+  }
+
+  const data = velocity ?? snapshot?.velocity ?? {}
 
   const averageVelocity = (sprints: VelocitySprint[]) => {
     if (!sprints || sprints.length === 0) return 0

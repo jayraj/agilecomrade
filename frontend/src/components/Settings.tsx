@@ -15,7 +15,7 @@ import { clearOfflineSnapshot } from '../utils/offlineCache'
 
 interface SettingsProps {
   onProfilesChanged: () => void
-  onSelectProfile: (slug: string) => void
+  onSelectProfile: (slug: string | null) => void
 }
 
 interface FormState {
@@ -51,6 +51,8 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
   const [defaultModels, setDefaultModels] = useState<Record<string, string>>({})
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [testResult, setTestResult] = useState<{ status: string; text: string } | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
@@ -207,21 +209,51 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
     }
   }
 
-  const removeProfile = async (slug: string) => {
-    if (!confirm(`Delete profile '${slug}'? This cannot be undone.`)) return
+  // Deletion is two-step and in-app (no window.confirm): the ✕ arms the
+  // prompt, `confirmDeleteNow` does the work. A native dialog can return
+  // false without the user knowing why, which made this look broken.
+  const startDelete = () => {
+    if (deleting) return
+    setMessage(null)
+    setConfirmDelete(true)
+  }
+
+  const cancelDelete = () => {
+    if (deleting) return
+    setConfirmDelete(false)
+  }
+
+  const confirmDeleteNow = async (slug: string) => {
+    if (!slug || deleting) return
+    setDeleting(true)
     try {
-      profileApi.setActiveSlug(slug)
-      await apiDeleteProfile(slug)
+      try {
+        await apiDeleteProfile(slug)
+      } catch (error) {
+        const status = (error as { response?: { status?: number } })?.response?.status
+        if (status !== 404) throw error
+        // 404 means the row is already gone server-side — that's the state we
+        // want, so fall through and clear the local profile as well.
+        console.warn(`Profile '${slug}' was already deleted server-side`)
+      }
       profileApi.remove(slug)
       void clearOfflineSnapshot(slug)
+      onSelectProfile(null)
       refreshProfiles()
       setMessage({ kind: 'ok', text: `Profile '${slug}' deleted.` })
       setCurrentSlug(null)
       setForm(EMPTY_FORM)
       setAccessToken('')
       setMode('create')
+      setConfirmDelete(false)
     } catch (error) {
+      // profileApi.remove only runs after a successful DELETE, so local state
+      // still matches the server — just show why the delete was refused.
+      console.error('Failed to delete profile:', error)
       setMessage({ kind: 'err', text: apiErrorMessage(error) })
+      setConfirmDelete(false)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -262,8 +294,10 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           <button
             className="saved-profile-delete"
             aria-label="Delete profile"
+            aria-expanded={confirmDelete}
             title="Delete profile"
-            onClick={() => { if (currentSlug) removeProfile(currentSlug) }}
+            onClick={startDelete}
+            disabled={deleting}
           >
             <X size={14} strokeWidth={2} />
           </button>
@@ -287,12 +321,35 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
                   <span>{form.llm_provider === 'gemini' ? 'Gemini' : form.llm_provider === 'openrouter' ? 'OpenRouter' : form.llm_provider} · {form.llm_model}</span>
                 </div>
               </div>
-              <button className="saved-profile-edit" onClick={enterEdit}>
+              <button className="saved-profile-edit" onClick={enterEdit} disabled={deleting}>
                 <PenLine size={14} strokeWidth={2} />
                 Edit
               </button>
             </div>
           </div>
+          {confirmDelete && currentSlug && (
+            <div className="saved-profile-confirm" role="group" aria-label="Confirm delete">
+              <span className="saved-profile-confirm-text">
+                Delete <strong>{currentSlug}</strong>? This erases its server-side data.
+              </span>
+              <button
+                type="button"
+                className="saved-profile-confirm-danger"
+                onClick={() => void confirmDeleteNow(currentSlug)}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+              <button
+                type="button"
+                className="saved-profile-confirm-cancel"
+                onClick={cancelDelete}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </>
       )}

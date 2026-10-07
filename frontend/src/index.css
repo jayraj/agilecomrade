@@ -1584,9 +1584,14 @@ body {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.saved-profile-delete:hover {
-  background: #fef2f2;
-  color: #ef4444;
+.saved-profile-delete:hover:not(:disabled) {
+  background: var(--badge-critical-bg);
+  color: var(--color-error);
+}
+
+.saved-profile-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .saved-profile-body {
@@ -1694,10 +1699,93 @@ body {
   transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
-.saved-profile-edit:hover {
+.saved-profile-edit:hover:not(:disabled) {
   border-color: var(--color-secondary-300);
   background: var(--color-secondary-50);
   color: var(--color-secondary-900);
+}
+
+.saved-profile-edit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Two-step delete confirmation inside the saved-profile card. Replaces the
+   window.confirm() gate, which could be dismissed or blocked without any
+   feedback — here the prompt stays in-app and its buttons show the in-flight
+   state instead of firing a second DELETE on a double click. */
+.saved-profile-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 12px;
+  color: var(--color-secondary-700);
+}
+
+.saved-profile-confirm-text {
+  flex: 1 1 220px;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.saved-profile-confirm-text strong {
+  color: var(--color-secondary-900);
+}
+
+.saved-profile-confirm-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-secondary-700);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.saved-profile-confirm-cancel:hover:not(:disabled) {
+  border-color: var(--color-secondary-300);
+  background: var(--color-secondary-50);
+  color: var(--color-secondary-900);
+}
+
+/* Solid destructive action — the ghost .settings-btn-danger is for cancelling
+   an edit; a delete prompt has to read as the irreversible choice. */
+.saved-profile-confirm-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  background: var(--color-danger-600);
+  border: 1px solid var(--color-danger-600);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-white);
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.saved-profile-confirm-danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.saved-profile-confirm button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.saved-profile-confirm button:focus-visible {
+  outline: 2px solid var(--color-primary-300);
+  outline-offset: 2px;
 }
 
 .settings-btn-danger {
@@ -1715,7 +1803,7 @@ body {
   transition: background 0.15s;
 }
 
-.settings-btn-danger:hover {
+.settings-btn-danger:hover:not(:disabled) {
   background: var(--badge-critical-bg);
 }
 

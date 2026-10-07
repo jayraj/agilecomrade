@@ -567,7 +567,21 @@ def delete_profile(slug: str, request: Request):
         return error
     if row.get("slug") != slug:
         return JSONResponse({"status": "error", "error": "Profile mismatch"}, status_code=403)
-    store.delete_profile(slug)
+    try:
+        deleted = store.delete_profile(slug)
+    except RuntimeError as e:
+        logger.error(f"Delete profile failed: {e}")
+        return JSONResponse(
+            {"status": "error", "error": "Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)"},
+            status_code=500,
+        )
+    except Exception as e:
+        logger.error(f"Delete profile failed unexpectedly: {e}")
+        return JSONResponse({"status": "error", "error": "Storage error — please try again"}, status_code=500)
+    if not deleted:
+        # PostgREST echoed no rows back, so nothing matched the filter: the
+        # row was already gone (or never existed). Don't claim a fresh delete.
+        return JSONResponse({"status": "error", "error": f"Profile '{slug}' not found"}, status_code=404)
     return {"status": "deleted", "slug": slug}
 
 

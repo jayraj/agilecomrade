@@ -37,7 +37,14 @@ class SupabaseStore:
         if not self.enabled:
             raise RuntimeError("Supabase not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing)")
         url = f"{self.base_url}/rest/v1/{path}"
-        kwargs.setdefault("headers", self._headers())
+        headers = self._headers()
+        # Bodyless verbs (DELETE above all) must not advertise a JSON payload:
+        # a Content-Type of application/json with an empty body is rejected by
+        # some PostgREST versions as PGRST123 "Empty or invalid json".
+        has_payload = kwargs.get("json") is not None or kwargs.get("data") not in (None, "", b"")
+        if not has_payload:
+            headers.pop("Content-Type", None)
+        kwargs.setdefault("headers", headers)
         kwargs["timeout"] = 30
         response = requests.request(method, url, **kwargs)
         if response.status_code >= 400:
@@ -68,6 +75,12 @@ class SupabaseStore:
         )
         return rows[0] if rows else None
 
-    def delete_profile(self, slug: str) -> bool:
-        self._request("DELETE", f"{TABLE}?slug=eq.{urlquote(slug, safe='')}")
-        return True
+    def delete_profile(self, slug: str) -> list[dict]:
+        """Delete a profile row and return the rows PostgREST actually removed.
+
+        `Prefer: return=representation` makes PostgREST echo the deleted rows,
+        so an empty list means the filter matched nothing (row already gone,
+        tenant mismatch, RLS filter) — the caller must not report that as a
+        successful delete.
+        """
+        return self._request("DELETE", f"{TABLE}?slug=eq.{urlquote(slug, safe='')}")

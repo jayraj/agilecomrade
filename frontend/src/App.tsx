@@ -41,7 +41,10 @@ export default function App() {
 
   const refreshProfiles = () => setProfiles(profileApi.list())
 
-  const handleSelectProfile = (slug: string) => {
+  // `null` clears the active profile (used after a delete) so the home route
+  // falls back to the "No profile configured yet" empty state instead of
+  // rendering a dashboard for a profile that no longer exists.
+  const handleSelectProfile = (slug: string | null) => {
     profileApi.setActiveSlug(slug)
     setActiveProfile(slug)
     setRefreshKey((k) => k + 1)
