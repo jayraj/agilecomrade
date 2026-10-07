@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Lock, PlugZap, Save, X, Globe, Cpu, PenLine } from 'lucide-react'
+import { ArrowLeft, PlugZap, Save, X, Globe, Cpu, PenLine } from 'lucide-react'
 import {
   apiConfigDefaults,
   apiCreateProfile,
@@ -42,6 +42,37 @@ const EMPTY_FORM: FormState = {
   story_points_field: '',
 }
 
+type ValidatedKey = 'slug' | 'jira_cloud_url' | 'jira_email' | 'jira_api_token'
+
+const isValidatedKey = (key: keyof FormState): key is ValidatedKey =>
+  key === 'slug' || key === 'jira_cloud_url' || key === 'jira_email' || key === 'jira_api_token'
+
+/** Mirrors the backend rules in main.py (SLUG_RE / JIRA_URL_RE) so invalid
+ *  fields are flagged before any request leaves the browser. */
+function validateForm(form: FormState, isCreate: boolean, requireToken: boolean): Partial<Record<ValidatedKey, string>> {
+  const errors: Partial<Record<ValidatedKey, string>> = {}
+  const slug = form.slug.trim()
+  const url = form.jira_cloud_url.trim().replace(/\/+$/, '').toLowerCase()
+  const email = form.jira_email.trim()
+  const token = form.jira_api_token.trim()
+
+  if (isCreate && !/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) {
+    errors.slug = 'Slug must be 2-40 chars: lowercase letters, digits, hyphens'
+  }
+  if (!url) {
+    errors.jira_cloud_url = 'Jira Cloud URL is required'
+  } else if (!/^https:\/\/[a-z0-9][a-z0-9-]*\.atlassian\.net$/.test(url)) {
+    errors.jira_cloud_url = 'Must be a https://<site>.atlassian.net URL'
+  }
+  if (!email) {
+    errors.jira_email = 'Jira email is required'
+  }
+  if (requireToken && !token) {
+    errors.jira_api_token = 'Jira API token is required'
+  }
+  return errors
+}
+
 export default function Settings({ onProfilesChanged, onSelectProfile }: SettingsProps) {
   const [initialActive] = useState(() => profileApi.active())
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -55,11 +86,14 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [testResult, setTestResult] = useState<{ status: string; text: string } | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ValidatedKey, string>>>({})
 
   const isView = mode === 'view'
   const isEdit = mode === 'edit'
   const isCreate = mode === 'create'
   const readOnly = isView
+
+  const fieldErrorList = [...new Set(Object.values(fieldErrors).filter((v): v is string => Boolean(v)))]
 
   useEffect(() => {
     apiConfigDefaults()
@@ -81,8 +115,17 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
 
   const refreshProfiles = () => onProfilesChanged()
 
-  const set = (key: keyof FormState) => (value: string) =>
+  const set = (key: keyof FormState) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }))
+    if (isValidatedKey(key)) {
+      setFieldErrors((e) => {
+        if (!e[key]) return e
+        const next = { ...e }
+        delete next[key]
+        return next
+      })
+    }
+  }
 
   const switchProvider = (provider: string) => {
     setForm((f) => ({
@@ -95,6 +138,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
   const loadIntoForm = async (slug: string, asEdit: boolean) => {
     setCurrentSlug(slug)
     setMessage(null)
+    setFieldErrors({})
     setForm((f) => ({ ...f, slug }))
     try {
       const { profile } = await apiGetProfile(slug)
@@ -132,6 +176,13 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
   }
 
   const testConnection = async () => {
+    const errors = validateForm(form, isCreate, true)
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setTestResult(null)
+      return
+    }
+    setFieldErrors({})
     setTesting(true)
     setTestResult(null)
     try {
@@ -162,6 +213,12 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
   }
 
   const saveProfile = async () => {
+    const errors = validateForm(form, isCreate, isCreate)
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      return
+    }
+    setFieldErrors({})
     setSaving(true)
     setMessage(null)
     try {
@@ -280,14 +337,14 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
         </div>
       )}
 
-      {isCreate && message && (
+      {isCreate && message?.kind === 'ok' && (
         <div className={`form-message ${message.kind}`}>{message.text}</div>
       )}
 
       {currentSlug && (
         <>
           <h3 className="saved-profile-heading">Saved profile (this browser)</h3>
-          {message && (
+          {message?.kind === 'ok' && (
             <div className={`form-message ${message.kind}`}>{message.text}</div>
           )}
           <div className="saved-profile-card">
@@ -330,7 +387,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           {confirmDelete && currentSlug && (
             <div className="saved-profile-confirm" role="group" aria-label="Confirm delete">
               <span className="saved-profile-confirm-text">
-                Delete <strong>{currentSlug}</strong>? This erases its server-side data.
+                Delete <strong>{currentSlug}</strong>? This erases the profile and its data completely from the server.
               </span>
               <button
                 type="button"
@@ -359,7 +416,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
         <h3>{isEdit ? `Edit profile: ${currentSlug}` : 'New profile'}</h3>
 
         <div className="form-grid">
-          <label>
+          <label className={fieldErrors.slug ? 'field-error' : undefined}>
             Slug (identifier, lowercase + hyphens)
             <input
               value={form.slug}
@@ -367,27 +424,35 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
               disabled={!isCreate}
               placeholder="e.g. acme-scm"
               maxLength={40}
+              aria-invalid={!!fieldErrors.slug}
             />
+            {fieldErrors.slug && <span className="field-error-text">{fieldErrors.slug}</span>}
           </label>
-          <label>
+          <label className={fieldErrors.jira_cloud_url ? 'field-error' : undefined}>
             Jira Cloud URL
             <input
               value={form.jira_cloud_url}
               onChange={(e) => set('jira_cloud_url')(e.target.value)}
               disabled={readOnly}
               placeholder="https://your-domain.atlassian.net"
+              aria-invalid={!!fieldErrors.jira_cloud_url}
             />
+            {fieldErrors.jira_cloud_url && (
+              <span className="field-error-text">{fieldErrors.jira_cloud_url}</span>
+            )}
           </label>
-          <label>
+          <label className={fieldErrors.jira_email ? 'field-error' : undefined}>
             Jira email
             <input
               value={form.jira_email}
               onChange={(e) => set('jira_email')(e.target.value)}
               disabled={readOnly}
               placeholder="you@company.com"
+              aria-invalid={!!fieldErrors.jira_email}
             />
+            {fieldErrors.jira_email && <span className="field-error-text">{fieldErrors.jira_email}</span>}
           </label>
-          <label>
+          <label className={fieldErrors.jira_api_token ? 'field-error' : undefined}>
             Jira API token {isEdit && <em>(blank = keep current)</em>}
             <input
               value={form.jira_api_token}
@@ -396,7 +461,11 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
               placeholder="ATATT3xFfGF..."
               type="password"
               autoComplete="off"
+              aria-invalid={!!fieldErrors.jira_api_token}
             />
+            {fieldErrors.jira_api_token && (
+              <span className="field-error-text">{fieldErrors.jira_api_token}</span>
+            )}
           </label>
           <label>
             Project keys (comma separated)
@@ -448,41 +517,13 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           </label>
         </div>
 
-        <details className="privacy-disclosure">
-          <summary className="privacy-summary">
-            <Lock size={14} strokeWidth={2} />
-            <span>
-              Save syncs this workspace&rsquo;s sprint data so risk scoring works, and stores it
-              securely. AI is used only when you click&nbsp;Mitigate / Scan / Draft — never on its own.
-            </span>
-          </summary>
-          <div className="privacy-disclosure-body">
-            <p>
-              <strong>What Save does:</strong> it fetches and stores this workspace&rsquo;s sprint
-              data (assignee names, issue summaries and descriptions) so the radar can score risks.
-              It is encrypted on the server and cached in your browser. Only your Jira and LLM keys are
-              kept server-side — everything else your browser saves is an access token, not the keys.
-            </p>
-            <p>
-              <strong>When AI sees your data:</strong> never from Save alone. Sprint data reaches your
-              AI provider only afterwards, when you click{' '}
-              <strong>Mitigation Plan with AI</strong>, <strong>Scan with AI</strong>, or{' '}
-              <strong>Draft Message</strong> — and never automatically. Jira stays read-only; any
-              follow-up message is a draft you copy and paste manually.
-            </p>
-            <p>
-              <strong>Want no AI at all?</strong> Leave the LLM API key blank — risk scoring and every
-              non-AI feature keep working fully rule-based. You can add a key later from this screen.
-            </p>
-            <p className="privacy-warning">
-              On Gemini&rsquo;s <strong>free tier</strong>, Google may use submitted prompts for product
-              improvement — use a paid-tier key if that&rsquo;s unacceptable. For OpenRouter, prefer
-              providers with a no-training / zero-retention policy. Issue text may still reach the
-              provider (assignees are pseudonymized). See the{' '}
-              <a href="/privacy.html" target="_blank" rel="noreferrer">privacy notice</a>.
-            </p>
+        {(fieldErrorList.length > 0 || message?.kind === 'err') && (
+          <div className="form-error-banner" role="alert">
+            {fieldErrorList.length > 0
+              ? fieldErrorList.map((m) => <span key={m}>{m}</span>)
+              : <span>{message?.text}</span>}
           </div>
-        </details>
+        )}
 
         <div className="form-actions">
           {!isView && (
@@ -505,16 +546,24 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           )}
         </div>
 
+        <div className="token-note privacy-note">
+          <p>
+            <strong>Test Connection</strong> checks your Jira and LLM settings without saving any data.
+          </p>
+          <p>
+            <strong>Save</strong> securely saves the profile. Your Jira token and LLM API key are encrypted. A browser access token is created and used to keep your requests secure.
+          </p>
+          <p>
+            See the{' '}
+            <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a> to learn how
+            your data is stored, used, and shared with the LLM during AI features.
+          </p>
+        </div>
+
         {testResult && (
           <div className={`test-result ${testResult.status === 'ok' ? 'ok' : 'partial'}`}>
             <pre>{testResult.text}</pre>
           </div>
-        )}
-
-        {isCreate && !accessToken && (
-          <p className="token-note">
-            An access token will be generated automatically on save and stored in this browser.
-          </p>
         )}
       </div>
       )}

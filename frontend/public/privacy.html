@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy Notice — Agile Comrade</title>
+  <title>Privacy Policy — Agile Comrade</title>
   <style>
     :root {
       --ink: #1e293b;
@@ -147,7 +147,7 @@
       Go to Dashboard
     </a>
 
-    <h1 class="page-title">Privacy Notice</h1>
+    <h1 class="page-title">Privacy Policy</h1>
     <div class="notice">
       <strong>MVP / demo software.</strong> Agile Comrade is an MVP decision-support tool
       for Scrum Masters and Delivery Managers: it surfaces potential delivery risks early so teams
@@ -157,57 +157,29 @@
 
     <p class="last-updated">Last updated: October 2026</p>
 
-    <h2>1. What we store</h2>
+    <h2>1. What data we keep — and where it lives</h2>
     <div class="card">
       <p>Your profile lives in Supabase and contains:</p>
       <ul>
-        <li><strong>Connection profile:</strong> profile slug, Jira Cloud URL, Jira email, project keys and LLM preferences.</li>
-        <li><strong>Cached sprint snapshot:</strong> issue keys, summaries, truncated descriptions (~500 characters), statuses, story points, assignee names, sprint dates, burndown history, and per-sprint scope baselines (issue-key → points maps).</li>
-        <li><strong>Cached AI analyses:</strong> generated mitigation plans are stored with the snapshot until regenerated or deleted.</li>
+        <li><strong>Connection profile</strong>: profile slug, Jira Cloud URL, Jira email, project keys, and AI provider/model preferences.</li>
+        <li><strong>Cached sprint snapshot</strong>: issue keys, summaries, truncated descriptions (~500 characters), statuses, story points, assignee names, labels, priority, due dates, sprint dates, burndown history, scope baselines (issue key → points), and velocity/delivery-health forecasts.</li>
+        <li><strong>Your risk decisions</strong>: the status, note, and owner you assign to each risk.</li>
+        <li><strong>Cached AI analyses</strong>: prompts and generated mitigation plans, kept with the snapshot until regenerated or deleted.</li>
       </ul>
-      <p>Your Jira API token and LLM API key are encrypted at rest (AES via Fernet — AES-128-CBC with HMAC-SHA256).
-      Your dashboard access token stays in your browser only — the server keeps just its SHA-256 hash.</p>
-      <p>Everything above is deleted when you remove the profile in Settings.</p>
+      <p>Your Jira API token and LLM API key are encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256) and used only on the server, never returned to your browser. Your dashboard access token stays in your browser; the server keeps only its SHA-256 hash.</p>
+      <p>Your browser also keeps an offline copy of your latest dashboard data, plus a few small preferences.</p>
+      <p>Deleting your profile in Settings removes all of the above, including local browser copies. Data sent to AI/LLM when you want to leverage AI remains under that provider's policy (see <a href="#retention">section 4</a>).</p>
     </div>
 
-    <h2>2. Where your data goes</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Service</th><th>Purpose</th><th>Data involved</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Atlassian Jira Cloud</td>
-            <td>Read sprint &amp; issue data</td>
-            <td>Read-only access to configured projects</td>
-          </tr>
-          <tr>
-            <td>Your configured AI provider</td>
-            <td>Risk analysis &amp; drafts</td>
-            <td>Relevant sprint/issue data (see section 3)</td>
-          </tr>
-          <tr>
-            <td>Supabase</td>
-            <td>Profile &amp; cache storage</td>
-            <td>Profile data, encrypted secrets, cached snapshot</td>
-          </tr>
-          <tr>
-            <td>Vercel</td>
-            <td>Application hosting</td>
-            <td>Standard request logs (which may include client IP addresses used for rate-limiting)</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p>You choose the AI provider and model in Settings (e.g., Gemini or OpenRouter).</p>
-
-    <h2>3. Data sent to AI providers</h2>
+    <h2>2. Data sent to AI/LLM when you want to leverage AI</h2>
     <div class="card">
+      <p>Nothing leaves your server until you click an AI feature — analysis is never automatic.</p>
       <p>When you trigger an analysis we send relevant Jira data: issue keys, summaries
       (truncated to ~300 characters), descriptions and acceptance criteria (truncated to ~250
-      characters), statuses, story points, sprint info, and aggregated sprint metrics
-      (burndown gaps).</p>
+      characters), statuses, story points, due dates, sprint info, aggregated sprint metrics
+      (burndown gaps), and — for current-sprint analysis — your saved risk decisions. Up to ~30
+      issues are included per analysis. The snapshot you view in the app keeps fuller context
+      (~500-character stored descriptions); this trimming applies only to what leaves the server.</p>
       <ul>
         <li>Assignees are pseudonymized freshly for each request (John Smith → <code>dev-01</code>).</li>
         <li>Email addresses are scrubbed before analysis.</li>
@@ -216,16 +188,22 @@
       AI-generated free-text outputs before sharing externally — names or other sensitive details
       may still appear inside summaries/descriptions (pseudonymization is not anonymization).</p>
       <div class="notice" style="margin-bottom:0">
-        <strong>Important:</strong> pseudonymization is not anonymization — names, customer information
-        or other sensitive details may still appear inside free text (summaries/descriptions) and reach
-        your chosen provider. Third-party AI providers have their own data-use, retention and training
-        policies that vary by service, model and plan — this app cannot control or override them.
-        Review your provider's current terms before enabling AI analysis; if your organization forbids
-        sending Jira data to external AI services, leave AI analysis off for that workspace.
+        <p><strong>Your provider controls your data — this app can't override that.</strong>
+        On Gemini's free tier, Google may use submitted prompts for product improvement — use a
+        paid-tier key if that's unacceptable. For OpenRouter, prefer providers with a
+        no-training / zero-retention policy. Third-party AI providers each have their own
+        data-use, retention and training policies that vary by service, model and plan.</p>
+        <p><strong>Pseudonymization is not anonymization.</strong> We replace assignee names
+        with fresh per-call pseudonyms (John Smith → <code>dev-01</code>) and strip emails
+        before anything leaves your server, but names, customer information or other sensitive
+        details can still appear inside free text (summaries/descriptions) and reach your
+        provider. Review your provider's current terms before enabling AI analysis — and if
+        your organization forbids sending Jira data to external AI services, leave AI
+        analysis off for that workspace.</p>
       </div>
     </div>
 
-    <h2>4. What we don't do</h2>
+    <h2>3. What we don't do</h2>
     <div class="card">
       <ul>
         <li>We never write to your Jira workspace — access is strictly read-only. We never create, modify, transition or delete issues.</li>
@@ -235,29 +213,19 @@
       </ul>
     </div>
 
-    <h2>5. AI accuracy &amp; third-party providers</h2>
-    <div class="card">
-      <p>Agile Comrade is an MVP, not an authoritative risk-prediction system: flagged items
-      may not be real risks, and real risks may go undetected. Treat results as
-      <em>surface → investigate → apply your delivery judgment → act if warranted</em>.
-      Your professional judgment remains the final authority.</p>
-      <p>Providers differ in how they handle submitted data (e.g., Gemini's free vs. paid tiers;
-      OpenRouter routing to third-party models with varying retention/training policies —
-      prefer no-training / zero-data-retention options where available for real workspaces).</p>
-    </div>
-
-    <h2>6. Retention &amp; your controls</h2>
+    <h2 id="retention">4. Retention &amp; your controls</h2>
     <div class="card">
       <ul>
-        <li>Edit or delete your profile anytime from Settings — deletion removes the database row and all cached data immediately.</li>
-        <li>AI analysis runs only when you explicitly trigger it; results are returned to your browser and cached with the snapshot until regenerated or deleted.</li>
+        <li>Data is retained only while your profile exists — cached snapshots are rebuilt on each sync and deleted with the profile (see section 1 for what's stored where, and how removing your profile clears it).</li>
+        <li>AI analysis runs only when you explicitly trigger it. Results are returned to your browser and cached with the snapshot until the next snapshot refresh.</li>
         <li>Deleting your profile doesn't retract data already submitted to a third-party AI provider, which remains subject to that provider's retention policies.</li>
       </ul>
     </div>
 
-    <h2>7. Contact</h2>
+    <h2>5. Contact</h2>
     <div class="card">
       <p>Privacy questions or deletion requests: <strong><a href="mailto:jaybhatta@yahoo.com">jaybhatta@yahoo.com</a></strong></p>
+      <p>For how-to guidance on the features described here, see the <a href="/user-guide.html">User Guide</a>.</p>
     </div>
   </main>
 </body>

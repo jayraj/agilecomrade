@@ -374,6 +374,7 @@
     <h1 class="page-title">Agile Comrade Guide</h1>
     <p class="lead">Agile Comrade watches your active and upcoming Jira sprints, scores delivery risks from
     data already in Jira, and drafts AI mitigation plans, so you can act before a sprint slips.</p>
+    <p class="sub-note">What data we keep and where it lives: <a href="/privacy.html">Privacy Policy</a>.</p>
 
     <nav class="toc" aria-label="On this page">
       <div class="toc-title">Contents</div>
@@ -393,16 +394,15 @@
     <h2 id="before-you-start">1. Before you start</h2>
     <p class="callout callout--warn"><strong>MVP software: a signal, not a verdict.</strong> The model can be
     wrong in both directions and sees only Jira. It can't know about someone on leave, a stakeholder
-    changing their mind or a customer escalation. <strong>Confirm before you escalate.</strong></p>
+    changing their mind or a customer escalation. Treat results as
+    <em>surface → investigate → apply your delivery judgment → act if warranted</em>. Your professional
+    judgment remains the final authority. <strong>Confirm before you escalate.</strong></p>
     <div class="callout callout--info">
-      <p><strong>AI privacy: what leaves your server.</strong>
-      AI analysis runs only when you click <strong>Mitigate with AI</strong>, <strong>Scan with AI</strong>, or request an <strong>AI Follow-up Message</strong> — never automatically.</p>
-      <ul>
-        <li><strong>Sent to the AI provider:</strong> ticket keys, summaries, statuses, story points, due dates and risk scores. Assignee names are replaced with per-call pseudonyms (dev-01, dev-02…) and emails are stripped from all text before anything leaves your server.</li>
-        <li><strong>Never sent:</strong> real assignee names, email addresses, API keys or profile credentials.</li>
-        <li><strong>Stays on your server:</strong> the pseudonymisation key (fresh for each call, then discarded) and your full Jira snapshot.</li>
-        <li><strong>Encrypted at rest:</strong> profile and snapshot data. Deleting a profile in Settings erases its server-side data immediately.</li>
-      </ul>
+      <p><strong>Your data, your call.</strong> AI analysis runs only when you click
+      <strong>Mitigate with AI</strong>, <strong>Scan with AI</strong>, or request an
+      <strong>AI Follow-up Message</strong> — never automatically. Assignee names are replaced with
+      per-call pseudonyms and emails are stripped before anything leaves your server. See the
+      <a href="/privacy.html">Privacy Policy</a> for everything we store and where your data goes.</p>
     </div>
 
     <h2 id="setup">2. Connect your workspace</h2>
@@ -425,7 +425,8 @@
     </div>
     <p class="callout callout--info">Two different tokens: your <strong>Agile Comrade access token</strong>
     stays only in this browser (the server stores a hash). Your <strong>Jira API token</strong> is
-    encrypted on the server because the backend needs it to fetch sprints.</p>
+    encrypted on the server because the backend needs it to fetch sprints. Full details — including
+    what's stored in this browser — are in the <a href="/privacy.html">Privacy Policy</a>.</p>
 
     <h2 id="dashboard">3. The dashboard</h2>
     <h3 id="dashboard-active">Active sprints</h3>
