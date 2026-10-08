@@ -5,7 +5,7 @@ import re
 import secrets
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from urllib.parse import quote as urlquote
 
 from fastapi import FastAPI, Request
@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import UserConfig, settings
-from crypto import decrypt, encrypt, sha256_hex
+from crypto import DecryptionError, decrypt_strict, encrypt, sha256_hex
 from jira_fetcher import JiraFetcher, fetch_all
 from mitigation_agent import MitigationAgent
 from risk_components import now_utc, to_utc
@@ -56,6 +56,18 @@ async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSON
     return JSONResponse(
         status_code=500,
         content={"status": "error", "error": "Internal server error"},
+    )
+
+
+@app.exception_handler(DecryptionError)
+async def decryption_error_handler(_request: Request, _exc: DecryptionError) -> JSONResponse:
+    logger.error("Stored credentials could not be decrypted")
+    return JSONResponse(
+        status_code=409,
+        content={
+            "status": "error",
+            "error": "Stored credentials can't be decrypted — reconnect this profile in Settings (re-enter the Jira API token).",
+        },
     )
 
 
@@ -200,7 +212,40 @@ def _trim_sprint_data(data: dict) -> dict:
     return out
 
 
-def _refresh_snapshot(row: dict, config: UserConfig):
+_refresh_locks: dict = {}
+_REFRESH_LOCKS_LOCK = threading.Lock()
+
+
+def _refresh_lock(slug: str) -> threading.Lock:
+    with _REFRESH_LOCKS_LOCK:
+        return _refresh_locks.setdefault(slug, threading.Lock())
+
+
+def _refresh_snapshot(row: dict, config: UserConfig, existing_snapshot=None):
+    """Serialise refreshes per profile, then merge against the freshest row.
+
+    Only one refresh runs per profile at a time, and the merge inputs (burndown
+    history, scope baselines, risk decisions) are read from the row *after*
+    acquiring the lock so a concurrent write can't be clobbered. While a refresh
+    is already running, a caller holding a cached snapshot gets it back
+    immediately (stale-while-revalidate) instead of blocking or firing a
+    duplicate Jira fetch.
+    """
+    slug = row.get("slug", "")
+    lock = _refresh_lock(slug)
+    if not lock.acquire(blocking=False):
+        if existing_snapshot is not None:
+            logger.info(f"♻️ Refresh already running for '{slug}' — serving cached snapshot.")
+            return existing_snapshot
+        lock.acquire()
+    try:
+        fresh = store.get_profile(slug) or row
+        return _refresh_snapshot_locked(fresh, config)
+    finally:
+        lock.release()
+
+
+def _refresh_snapshot_locked(row: dict, config: UserConfig):
     """Fetch fresh Jira data, recompute risks, persist snapshot + history.
 
     If the Jira fetch comes back completely empty (e.g. transient outage),
@@ -250,7 +295,7 @@ def _refresh_snapshot(row: dict, config: UserConfig):
 
     # Capture/extend scope-creep state for each ACTIVE sprint: baseline on
     # first sight (the planning commitment), then append today's total SP.
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = now_utc().isoformat()
     now = now_utc()
     for project_data in sprint_data.values():
         sprint = project_data.get("sprint")
@@ -305,7 +350,7 @@ def _refresh_snapshot(row: dict, config: UserConfig):
         risks=risks,
         burndown_history=burndown_history,
         mitigations=[],
-        last_sync=datetime.utcnow().isoformat(),
+        last_sync=now_utc().isoformat(),
         scope_meta=scope_meta,
         jira_timezone=jira_timezone,
         risk_decisions=risk_decisions,
@@ -314,7 +359,7 @@ def _refresh_snapshot(row: dict, config: UserConfig):
     store.update_profile(row["slug"], {
         "snapshot": snapshot,
         "burndown_history": burndown_history,
-        "fetched_at": datetime.utcnow().isoformat(),
+        "fetched_at": now_utc().isoformat(),
     })
 
     logger.info(f"✅ Profile '{row['slug']}' synced. {len(risks)} risks.")
@@ -322,7 +367,7 @@ def _refresh_snapshot(row: dict, config: UserConfig):
 
 
 def _get_or_refresh_snapshot(row: dict, allow_stale: bool = False):
-    config = UserConfig.from_row(row, decrypt)
+    config = UserConfig.from_row(row, decrypt_strict)
     fetched_at = row.get("fetched_at")
     snapshot = row.get("snapshot")
 
@@ -333,13 +378,13 @@ def _get_or_refresh_snapshot(row: dict, allow_stale: bool = False):
         if allow_stale:
             return snapshot, config
         try:
-            fetched_dt = datetime.fromisoformat(fetched_at.replace("Z", "+00:00")).replace(tzinfo=None)
+            fetched_dt = to_utc(fetched_at)
         except Exception:
             fetched_dt = None
-        if fetched_dt and datetime.utcnow() - fetched_dt < timedelta(minutes=settings.sync_interval_minutes):
+        if fetched_dt and now_utc() - fetched_dt < timedelta(minutes=settings.sync_interval_minutes):
             return snapshot, config
 
-    return _refresh_snapshot(row, config), config
+    return _refresh_snapshot(row, config, existing_snapshot=snapshot), config
 
 
 # ------------------------------------------------------------------ #
@@ -374,7 +419,7 @@ def health():
     return {
         "status": "healthy",
         "storage": "supabase" if store.enabled else "not-configured",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": now_utc().isoformat(),
     }
 
 
@@ -481,7 +526,7 @@ def verify_profile(request: Request, body: dict):
     if not row or not hmac.compare_digest(row.get("access_token_hash", ""), sha256_hex(access_token)):
         return JSONResponse({"status": "error", "error": "Invalid slug or access token"}, status_code=401)
 
-    config = UserConfig.from_row(row, decrypt)
+    config = UserConfig.from_row(row, decrypt_strict)
     return {"status": "ok", "profile": _sanitized_config(row, config)}
 
 
@@ -492,7 +537,7 @@ def get_profile(slug: str, request: Request):
         return error
     if row.get("slug") != slug:
         return JSONResponse({"status": "error", "error": "Profile mismatch"}, status_code=403)
-    config = UserConfig.from_row(row, decrypt)
+    config = UserConfig.from_row(row, decrypt_strict)
     return {"status": "ok", "profile": _sanitized_config(row, config)}
 
 
@@ -551,7 +596,7 @@ def update_profile(slug: str, request: Request, body: dict):
         logger.error(f"Update profile failed unexpectedly: {e}")
         return JSONResponse({"status": "error", "error": "Storage error — please try again"}, status_code=500)
 
-    config = UserConfig.from_row(updated or row, decrypt)
+    config = UserConfig.from_row(updated or row, decrypt_strict)
     return {
         "status": "ok",
         "profile": _sanitized_config(updated or row, config),
@@ -655,7 +700,7 @@ def sync_now(request: Request):
     if error:
         return error
 
-    config = UserConfig.from_row(row, decrypt)
+    config = UserConfig.from_row(row, decrypt_strict)
     snapshot = _refresh_snapshot(row, config)
     return {
         "status": "synced",
@@ -711,7 +756,7 @@ def set_scope_baseline(slug: str, request: Request, body: dict = None):
     baselines[sprint_name] = {
         "total_sp": total_sp,
         "issues": issue_map,
-        "captured_at": datetime.utcnow().isoformat(),
+        "captured_at": now_utc().isoformat(),
         "late_capture": False,
         "manual": True,
     }
@@ -768,7 +813,7 @@ def set_risk_decision(request: Request, body: dict = None):
         "status": status,
         "note": (body.get("note") or "").strip(),
         "owner": (body.get("owner") or "").strip(),
-        "decided_at": datetime.utcnow().isoformat(),
+        "decided_at": now_utc().isoformat(),
     }
 
     updated = {**snapshot, "risk_decisions": decisions}
@@ -945,7 +990,7 @@ def generate_followup_message(request: Request, body: dict = None):
         return JSONResponse({"status": "error", "error": "issue_key is required"}, status_code=400)
 
     t0 = time.time()
-    config = UserConfig.from_row(row, decrypt)
+    config = UserConfig.from_row(row, decrypt_strict)
     blocker_in = (body or {}).get("blocker")
 
     if blocker_in:

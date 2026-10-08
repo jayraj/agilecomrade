@@ -90,6 +90,7 @@ python main.py
 cd frontend
 cp .env.example .env.local    # VITE_API_BASE=http://127.0.0.1:5002
 npm install
+npm run test                  # unit tests (vitest)
 npm run dev
 ```
 

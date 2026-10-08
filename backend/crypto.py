@@ -32,5 +32,20 @@ def decrypt(token: str) -> str:
         return ""
 
 
+class DecryptionError(RuntimeError):
+    """Raised when a stored secret cannot be decrypted (e.g. the key rotated)."""
+
+
+def decrypt_strict(token: str) -> str:
+    """Like decrypt(), but raises DecryptionError on a corrupt token instead of
+    returning "" so callers can distinguish a missing secret from a broken one."""
+    if not token:
+        return ""
+    try:
+        return _fernet().decrypt(token.encode()).decode()
+    except (InvalidToken, ValueError) as e:
+        raise DecryptionError("Stored secret could not be decrypted") from e
+
+
 def sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()

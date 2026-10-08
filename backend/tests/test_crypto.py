@@ -28,6 +28,18 @@ def test_invalid_token_returns_empty() -> None:
     assert crypto.decrypt("not-a-valid-token") == ""
 
 
+def test_decrypt_strict_roundtrip_and_empty() -> None:
+    assert crypto.decrypt_strict(crypto.encrypt("abc")) == "abc"
+    assert crypto.decrypt_strict("") == ""
+
+
+def test_decrypt_strict_raises_on_corrupt_token() -> None:
+    import pytest
+
+    with pytest.raises(crypto.DecryptionError):
+        crypto.decrypt_strict("not-a-valid-token")
+
+
 def test_sha256_hex_is_deterministic() -> None:
     assert crypto.sha256_hex("abc") == crypto.sha256_hex("abc")
     assert crypto.sha256_hex("abc") != crypto.sha256_hex("abd")
