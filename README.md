@@ -81,8 +81,9 @@ Settings screen — each profile supplies its own via the UI.
 # Backend (port 5002)
 cd backend
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python validate_rubric.py     # 15/15 rubric checks
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest              # unit tests
+python validate_rubric.py     # 67/67 rubric checks
 python main.py
 
 # Frontend (port 3001) — point it at the local backend
