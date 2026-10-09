@@ -16,16 +16,12 @@ def test_encrypt_decrypt_roundtrip() -> None:
     token = "super-secret-jira-token"
     encrypted = crypto.encrypt(token)
     assert encrypted != token
-    assert crypto.decrypt(encrypted) == token
+    assert crypto.decrypt_strict(encrypted) == token
 
 
 def test_empty_string() -> None:
     assert crypto.encrypt("") == ""
-    assert crypto.decrypt("") == ""
-
-
-def test_invalid_token_returns_empty() -> None:
-    assert crypto.decrypt("not-a-valid-token") == ""
+    assert crypto.decrypt_strict("") == ""
 
 
 def test_decrypt_strict_roundtrip_and_empty() -> None:

@@ -56,7 +56,9 @@ def create_profile(request: Request, body: dict):
         }
         created = store.create_profile(row)
     except DuplicateProfileError:
-        return _error(f"Profile '{slug}' already exists", 409)
+        # Don't echo the slug: creation responses should not confirm which
+        # slugs exist (keeps this consistent with verify's generic 401).
+        return _error("Profile already exists or slug is unavailable", 409)
     except RuntimeError as e:
         logger.error(f"Create profile failed: {e}")
         return _error("Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)", 500)
@@ -193,8 +195,7 @@ def test_config(request: Request, body: dict):
     Rate-limited and restricted to https://*.atlassian.net to prevent use as
     an unauthenticated SSRF relay / credential-stuffing target.
     """
-    client_ip = request.client.host if request.client else "unknown"
-    limited = rate_limit(f"test-config:{client_ip}", max_requests=10, window_seconds=300)
+    limited = rate_limit(f"test-config:{_client_ip(request)}", max_requests=10, window_seconds=300)
     if limited:
         return limited
 
