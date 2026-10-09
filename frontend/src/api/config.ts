@@ -54,9 +54,15 @@ export const profileApi = {
   },
 
   generateToken(): string {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-      return crypto.randomUUID()
+    const c: Crypto | undefined = globalThis.crypto
+    if (c && typeof c.randomUUID === 'function') {
+      return c.randomUUID()
     }
-    return 'srr-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+    if (c) {
+      const bytes = new Uint8Array(16)
+      c.getRandomValues(bytes)
+      return 'srr-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    }
+    throw new Error('Secure random number generation is not available in this browser.')
   },
 }
