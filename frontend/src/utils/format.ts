@@ -52,6 +52,22 @@ export const severityFromScore = (score?: number | null): string | null => {
   return bandForScore(score).sev
 }
 
+// Canonical RAG ordering shared by every severity sort (higher = worse).
+export const SEVERITY_RANK: Record<string, number> = {
+  LOW: 1,
+  MEDIUM: 2,
+  HIGH: 3,
+  CRITICAL: 4,
+}
+
+// Resolve a blocker's display severity. The recalibrated score band wins when a
+// score is present (it mirrors the backend's bucket_severity), then the stored
+// severity field, then a MEDIUM default — always upper-cased for badge/class use.
+export const severityOf = (b: {
+  risk_score?: number | null
+  severity?: string | null
+}): string => (severityFromScore(b.risk_score) || b.severity || 'MEDIUM').toUpperCase()
+
 export interface RiskDetectFields {
   issue_key?: string
   issue_keys?: string[]

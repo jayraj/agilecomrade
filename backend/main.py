@@ -59,10 +59,7 @@ _MAX_BODY_BYTES = 1_000_000
 async def security_middleware(request: Request, call_next):
     content_length = request.headers.get("content-length")
     if content_length and content_length.isdigit() and int(content_length) > _MAX_BODY_BYTES:
-        return JSONResponse(
-            {"status": "error", "error": "Request body too large"},
-            status_code=413,
-        )
+        return _error("Request body too large", 413)
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
@@ -77,21 +74,15 @@ async def security_middleware(request: Request, call_next):
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     logger.error("Unhandled exception: %s", exc, exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"status": "error", "error": "Internal server error"},
-    )
+    return _error("Internal server error", 500)
 
 
 @app.exception_handler(DecryptionError)
 async def decryption_error_handler(_request: Request, _exc: DecryptionError) -> JSONResponse:
     logger.error("Stored credentials could not be decrypted")
-    return JSONResponse(
-        status_code=409,
-        content={
-            "status": "error",
-            "error": "Stored credentials can't be decrypted — reconnect this profile in Settings (re-enter the Jira API token).",
-        },
+    return _error(
+        "Stored credentials can't be decrypted — reconnect this profile in Settings (re-enter the Jira API token).",
+        409,
     )
 
 
@@ -122,10 +113,7 @@ def rate_limit(key: str, max_requests: int, window_seconds: int):
         bucket = [t for t in _RATE_BUCKETS.get(key, []) if now - t < window_seconds]
         if len(bucket) >= max_requests:
             _RATE_BUCKETS[key] = bucket
-            return JSONResponse(
-                {"status": "error", "error": "Too many requests. Please try again later."},
-                status_code=429,
-            )
+            return _error("Too many requests. Please try again later.", 429)
         bucket.append(now)
         _RATE_BUCKETS[key] = bucket
         if len(_RATE_BUCKETS) > _RATE_MAX_KEYS:
@@ -165,6 +153,12 @@ def _client_ip(request: Request) -> str:
         return real
     return request.client.host if request.client else "unknown"
 
+
+def _error(message: str, status_code: int = 400) -> JSONResponse:
+    """Uniform error envelope: {"status": "error", "error": message}."""
+    return JSONResponse({"status": "error", "error": message}, status_code=status_code)
+
+
 # UserConfig field name -> profile column name (empty value => plain column,
 # "_enc" suffix columns are written encrypted).
 CONFIG_FIELD_MAP = {
@@ -191,18 +185,15 @@ def _auth(request: Request):
     slug = (request.headers.get("X-SRR-Profile") or "").strip()
     token = (request.headers.get("X-SRR-Token") or "").strip()
     if not slug or not token or len(token) < 16 or not _validate_slug(slug):
-        return None, JSONResponse(
-            {"status": "error", "error": "Invalid credentials"},
-            status_code=401,
-        )
+        return None, _error("Invalid credentials", 401)
     try:
         row = store.get_profile(urlquote(slug, safe=""))
     except Exception as e:
         logger.error(f"Supabase lookup failed for {slug}: {e}")
-        return None, JSONResponse({"status": "error", "error": "Storage unavailable"}, status_code=503)
+        return None, _error("Storage unavailable", 503)
 
     if not row or not hmac.compare_digest(row.get("access_token_hash", ""), sha256_hex(token)):
-        return None, JSONResponse({"status": "error", "error": "Invalid credentials"}, status_code=401)
+        return None, _error("Invalid credentials", 401)
 
     return row, None
 
@@ -495,22 +486,13 @@ def create_profile(request: Request, body: dict):
     access_token = (body.get("access_token") or "").strip() or secrets.token_urlsafe(32)
 
     if not _validate_slug(slug):
-        return JSONResponse(
-            {"status": "error", "error": "Slug must be 2-40 chars: lowercase letters, digits, hyphens"},
-            status_code=400,
-        )
+        return _error("Slug must be 2-40 chars: lowercase letters, digits, hyphens", 400)
 
     config = _config_from_body(body)
     if not config.jira_cloud_url or not config.jira_email or not config.jira_api_token:
-        return JSONResponse(
-            {"status": "error", "error": "jira_cloud_url, jira_email and jira_api_token are required"},
-            status_code=400,
-        )
+        return _error("jira_cloud_url, jira_email and jira_api_token are required", 400)
     if not validate_jira_url(config.jira_cloud_url):
-        return JSONResponse(
-            {"status": "error", "error": "jira_cloud_url must be a https://<site>.atlassian.net URL"},
-            status_code=400,
-        )
+        return _error("jira_cloud_url must be a https://<site>.atlassian.net URL", 400)
 
     limited = rate_limit(f"create-profile:{_client_ip(request)}", max_requests=10, window_seconds=3600)
     if limited:
@@ -531,19 +513,13 @@ def create_profile(request: Request, body: dict):
         }
         created = store.create_profile(row)
     except DuplicateProfileError:
-        return JSONResponse(
-            {"status": "error", "error": f"Profile '{slug}' already exists"},
-            status_code=409,
-        )
+        return _error(f"Profile '{slug}' already exists", 409)
     except RuntimeError as e:
         logger.error(f"Create profile failed: {e}")
-        return JSONResponse(
-            {"status": "error", "error": "Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)"},
-            status_code=500,
-        )
+        return _error("Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)", 500)
     except Exception as e:
         logger.error(f"Create profile failed unexpectedly: {e}")
-        return JSONResponse({"status": "error", "error": "Storage error — please try again"}, status_code=500)
+        return _error("Storage error — please try again", 500)
 
     return {
         "status": "created",
@@ -559,7 +535,7 @@ def verify_profile(request: Request, body: dict):
     slug = (body.get("slug") or "").strip().lower()
     access_token = (body.get("access_token") or "").strip()
     if not slug or not access_token:
-        return JSONResponse({"status": "error", "error": "slug and access_token are required"}, status_code=400)
+        return _error("slug and access_token are required", 400)
 
     limited = rate_limit(f"verify:{_client_ip(request)}", max_requests=10, window_seconds=300)
     if limited:
@@ -569,9 +545,9 @@ def verify_profile(request: Request, body: dict):
         row = store.get_profile(urlquote(slug, safe=""))
     except Exception as e:
         logger.error(f"Verify lookup failed for {slug}: {e}")
-        return JSONResponse({"status": "error", "error": "Storage unavailable"}, status_code=503)
+        return _error("Storage unavailable", 503)
     if not row or not hmac.compare_digest(row.get("access_token_hash", ""), sha256_hex(access_token)):
-        return JSONResponse({"status": "error", "error": "Invalid slug or access token"}, status_code=401)
+        return _error("Invalid slug or access token", 401)
 
     config = UserConfig.from_row(row, decrypt_strict)
     return {"status": "ok", "profile": _sanitized_config(row, config)}
@@ -583,7 +559,7 @@ def get_profile(slug: str, request: Request):
     if error:
         return error
     if row.get("slug") != slug:
-        return JSONResponse({"status": "error", "error": "Profile mismatch"}, status_code=403)
+        return _error("Profile mismatch", 403)
     config = UserConfig.from_row(row, decrypt_strict)
     return {"status": "ok", "profile": _sanitized_config(row, config)}
 
@@ -594,7 +570,7 @@ def update_profile(slug: str, request: Request, body: dict):
     if error:
         return error
     if row.get("slug") != slug:
-        return JSONResponse({"status": "error", "error": "Profile mismatch"}, status_code=403)
+        return _error("Profile mismatch", 403)
 
     body = body or {}
     patch = {}
@@ -614,17 +590,14 @@ def update_profile(slug: str, request: Request, body: dict):
             patch[column] = value or None
 
     if "jira_cloud_url" in patch and not validate_jira_url(patch["jira_cloud_url"]):
-        return JSONResponse(
-            {"status": "error", "error": "jira_cloud_url must be a https://<site>.atlassian.net URL"},
-            status_code=400,
-        )
+        return _error("jira_cloud_url must be a https://<site>.atlassian.net URL", 400)
 
     new_token = (body.get("access_token") or "").strip()
     if new_token:
         patch["access_token_hash"] = sha256_hex(new_token)
 
     if not patch:
-        return JSONResponse({"status": "error", "error": "No fields to update"}, status_code=400)
+        return _error("No fields to update", 400)
 
     # Config changes invalidate the cached snapshot so the dashboard re-fetches
     # with the new project keys / credentials instead of serving stale data.
@@ -635,13 +608,10 @@ def update_profile(slug: str, request: Request, body: dict):
         updated = store.update_profile(slug, patch)
     except RuntimeError as e:
         logger.error(f"Update profile failed: {e}")
-        return JSONResponse(
-            {"status": "error", "error": "Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)"},
-            status_code=500,
-        )
+        return _error("Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)", 500)
     except Exception as e:
         logger.error(f"Update profile failed unexpectedly: {e}")
-        return JSONResponse({"status": "error", "error": "Storage error — please try again"}, status_code=500)
+        return _error("Storage error — please try again", 500)
 
     config = UserConfig.from_row(updated or row, decrypt_strict)
     return {
@@ -657,22 +627,19 @@ def delete_profile(slug: str, request: Request):
     if error:
         return error
     if row.get("slug") != slug:
-        return JSONResponse({"status": "error", "error": "Profile mismatch"}, status_code=403)
+        return _error("Profile mismatch", 403)
     try:
         deleted = store.delete_profile(slug)
     except RuntimeError as e:
         logger.error(f"Delete profile failed: {e}")
-        return JSONResponse(
-            {"status": "error", "error": "Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)"},
-            status_code=500,
-        )
+        return _error("Storage is not configured (check ENCRYPTION_KEY / SUPABASE_* on the server)", 500)
     except Exception as e:
         logger.error(f"Delete profile failed unexpectedly: {e}")
-        return JSONResponse({"status": "error", "error": "Storage error — please try again"}, status_code=500)
+        return _error("Storage error — please try again", 500)
     if not deleted:
         # PostgREST echoed no rows back, so nothing matched the filter: the
         # row was already gone (or never existed). Don't claim a fresh delete.
-        return JSONResponse({"status": "error", "error": f"Profile '{slug}' not found"}, status_code=404)
+        return _error(f"Profile '{slug}' not found", 404)
     return {"status": "deleted", "slug": slug}
 
 
@@ -690,15 +657,9 @@ def test_config(request: Request, body: dict):
 
     config = _config_from_body(body or {})
     if not config.jira_cloud_url or not config.jira_email or not config.jira_api_token:
-        return JSONResponse(
-            {"status": "error", "error": "jira_cloud_url, jira_email and jira_api_token are required"},
-            status_code=400,
-        )
+        return _error("jira_cloud_url, jira_email and jira_api_token are required", 400)
     if not validate_jira_url(config.jira_cloud_url):
-        return JSONResponse(
-            {"status": "error", "error": "jira_cloud_url must be a https://<site>.atlassian.net URL"},
-            status_code=400,
-        )
+        return _error("jira_cloud_url must be a https://<site>.atlassian.net URL", 400)
 
     fetcher = JiraFetcher(config)
     result = fetcher.test_connection()
@@ -770,15 +731,12 @@ def set_scope_baseline(slug: str, request: Request, body: dict = None):
     if error:
         return error
     if row.get("slug") != slug:
-        return JSONResponse({"status": "error", "error": "slug mismatch"}, status_code=403)
+        return _error("slug mismatch", 403)
 
     sprint_name = (body or {}).get("sprint_name")
     total_sp = (body or {}).get("total_sp")
     if not sprint_name or total_sp is None or not isinstance(total_sp, (int, float)) or total_sp < 0:
-        return JSONResponse(
-            {"status": "error", "error": "sprint_name and non-negative total_sp are required"},
-            status_code=400,
-        )
+        return _error("sprint_name and non-negative total_sp are required", 400)
 
     snapshot = _get_or_refresh_snapshot(row)[0]
     issues_by_sprint = {}
@@ -787,10 +745,7 @@ def set_scope_baseline(slug: str, request: Request, body: dict = None):
         if sprint.get("name"):
             issues_by_sprint[sprint["name"]] = data.get("issues", [])
     if sprint_name not in issues_by_sprint:
-        return JSONResponse(
-            {"status": "error", "error": f"No active sprint named '{sprint_name}' in the current snapshot"},
-            status_code=404,
-        )
+        return _error(f"No active sprint named '{sprint_name}' in the current snapshot", 404)
 
     issue_map = {
         i.get("key"): (i.get("story_points", 0) or 0)
@@ -843,17 +798,11 @@ def set_risk_decision(request: Request, body: dict = None):
     risk_id = (body.get("risk_id") or "").strip()
     status = (body.get("status") or "").strip().lower()
     if not risk_id or status not in DECISION_STATUSES:
-        return JSONResponse(
-            {"status": "error", "error": f"risk_id and a valid status ({', '.join(DECISION_STATUSES)}) are required"},
-            status_code=400,
-        )
+        return _error(f"risk_id and a valid status ({', '.join(DECISION_STATUSES)}) are required", 400)
 
     snapshot, _ = _get_or_refresh_snapshot(row, allow_stale=True)
     if risk_id not in {r.get("risk_id") for r in snapshot.get("risks", [])}:
-        return JSONResponse(
-            {"status": "error", "error": "Risk not found in the current snapshot — it may have resolved or moved"},
-            status_code=404,
-        )
+        return _error("Risk not found in the current snapshot — it may have resolved or moved", 404)
 
     decisions = dict(snapshot.get("risk_decisions") or {})
     decisions[risk_id] = {
@@ -942,17 +891,14 @@ def next_sprint_risks(request: Request, body: dict = None):
 
     project_key = (body or {}).get("project_key")
     if not project_key:
-        return JSONResponse({"status": "error", "error": "project_key is required"}, status_code=400)
+        return _error("project_key is required", 400)
 
     t0 = time.time()
     snapshot, config = _get_or_refresh_snapshot(row, allow_stale=True)
     t_snap = time.time() - t0
     project_data = snapshot.get("next_sprint_data", {}).get(project_key)
     if not project_data or not project_data.get("sprint"):
-        return JSONResponse(
-            {"status": "error", "error": f"No next sprint found for project {project_key}"},
-            status_code=404,
-        )
+        return _error(f"No next sprint found for project {project_key}", 404)
 
     issues = project_data.get("issues", [])
     risk_engine = RiskEngine()
@@ -995,15 +941,12 @@ def next_sprint_issues(request: Request, body: dict = None):
 
     project_key = (body or {}).get("project_key")
     if not project_key:
-        return JSONResponse({"status": "error", "error": "project_key is required"}, status_code=400)
+        return _error("project_key is required", 400)
 
     snapshot, config = _get_or_refresh_snapshot(row)
     project_data = snapshot.get("next_sprint_data", {}).get(project_key)
     if not project_data or not project_data.get("sprint"):
-        return JSONResponse(
-            {"status": "error", "error": f"No next sprint found for project {project_key}"},
-            status_code=404,
-        )
+        return _error(f"No next sprint found for project {project_key}", 404)
 
     issues = []
     for issue in project_data.get("issues", []):
@@ -1034,7 +977,7 @@ def generate_followup_message(request: Request, body: dict = None):
 
     issue_key = (body or {}).get("issue_key")
     if not issue_key:
-        return JSONResponse({"status": "error", "error": "issue_key is required"}, status_code=400)
+        return _error("issue_key is required", 400)
 
     t0 = time.time()
     config = UserConfig.from_row(row, decrypt_strict)

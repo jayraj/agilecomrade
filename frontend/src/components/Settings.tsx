@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, PlugZap, Save, X, Globe, Cpu, PenLine } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import {
   apiConfigDefaults,
   apiCreateProfile,
@@ -13,65 +13,19 @@ import {
 } from '../api/client'
 import { profileApi } from '../api/config'
 import { clearOfflineSnapshot } from '../utils/offlineCache'
+import {
+  EMPTY_FORM,
+  isValidatedKey,
+  validateForm,
+  type FormState,
+  type ValidatedKey,
+} from '../utils/settingsForm'
+import SavedProfileCard from './SavedProfileCard'
+import ProfileForm from './ProfileForm'
 
 interface SettingsProps {
   onProfilesChanged: () => void
   onSelectProfile: (slug: string | null) => void
-}
-
-interface FormState {
-  slug: string
-  jira_cloud_url: string
-  jira_email: string
-  jira_api_token: string
-  jira_projects: string
-  llm_provider: string
-  llm_model: string
-  llm_api_key: string
-  story_points_field: string
-}
-
-const EMPTY_FORM: FormState = {
-  slug: '',
-  jira_cloud_url: '',
-  jira_email: '',
-  jira_api_token: '',
-  jira_projects: '',
-  llm_provider: 'gemini',
-  llm_model: '',
-  llm_api_key: '',
-  story_points_field: '',
-}
-
-type ValidatedKey = 'slug' | 'jira_cloud_url' | 'jira_email' | 'jira_api_token'
-
-const isValidatedKey = (key: keyof FormState): key is ValidatedKey =>
-  key === 'slug' || key === 'jira_cloud_url' || key === 'jira_email' || key === 'jira_api_token'
-
-/** Mirrors the backend rules in main.py (SLUG_RE / JIRA_URL_RE) so invalid
- *  fields are flagged before any request leaves the browser. */
-function validateForm(form: FormState, isCreate: boolean, requireToken: boolean): Partial<Record<ValidatedKey, string>> {
-  const errors: Partial<Record<ValidatedKey, string>> = {}
-  const slug = form.slug.trim()
-  const url = form.jira_cloud_url.trim().replace(/\/+$/, '').toLowerCase()
-  const email = form.jira_email.trim()
-  const token = form.jira_api_token.trim()
-
-  if (isCreate && !/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) {
-    errors.slug = 'Slug must be 2-40 chars: lowercase letters, digits, hyphens'
-  }
-  if (!url) {
-    errors.jira_cloud_url = 'Jira Cloud URL is required'
-  } else if (!/^https:\/\/[a-z0-9][a-z0-9-]*\.atlassian\.net$/.test(url)) {
-    errors.jira_cloud_url = 'Must be a https://<site>.atlassian.net URL'
-  }
-  if (!email) {
-    errors.jira_email = 'Jira email is required'
-  }
-  if (requireToken && !token) {
-    errors.jira_api_token = 'Jira API token is required'
-  }
-  return errors
 }
 
 export default function Settings({ onProfilesChanged, onSelectProfile }: SettingsProps) {
@@ -398,225 +352,40 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           {message?.kind === 'ok' && (
             <div className={`form-message ${message.kind}`}>{message.text}</div>
           )}
-          <div className="saved-profile-card">
-          <button
-            className="saved-profile-delete"
-            aria-label="Delete profile"
-            aria-expanded={confirmDelete}
-            title="Delete profile"
-            onClick={startDelete}
-            disabled={deleting}
-          >
-            <X size={14} strokeWidth={2} />
-          </button>
-          <div className="saved-profile-body">
-            <div className="saved-profile-avatar">
-              {(currentSlug || '?').replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()}
-            </div>
-            <div className="saved-profile-info">
-              <div className="saved-profile-head">
-                <span className="saved-profile-slug">{currentSlug}</span>
-                <span className="saved-profile-active">Active</span>
-              </div>
-              <span className="saved-profile-email">{form.jira_email}</span>
-              <div className="saved-profile-meta">
-                <div className="saved-profile-meta-row">
-                  <Globe size={14} strokeWidth={2} />
-                  <span>{form.jira_cloud_url}</span>
-                </div>
-                <div className="saved-profile-meta-row">
-                  <Cpu size={14} strokeWidth={2} />
-                  <span>{form.llm_provider === 'gemini' ? 'Gemini' : form.llm_provider === 'openrouter' ? 'OpenRouter' : form.llm_provider} · {form.llm_model}</span>
-                </div>
-              </div>
-              <button className="saved-profile-edit" onClick={enterEdit} disabled={deleting}>
-                <PenLine size={14} strokeWidth={2} />
-                Edit
-              </button>
-            </div>
-          </div>
-          {confirmDelete && currentSlug && (
-            <div className="saved-profile-confirm" role="group" aria-label="Confirm delete">
-              <span className="saved-profile-confirm-text">
-                Delete <strong>{currentSlug}</strong>? This erases the profile and its data completely from the server.
-              </span>
-              <button
-                type="button"
-                className="saved-profile-confirm-danger"
-                onClick={() => void confirmDeleteNow(currentSlug)}
-                disabled={deleting}
-              >
-                {deleting ? 'Deleting…' : 'Delete'}
-              </button>
-              <button
-                type="button"
-                className="saved-profile-confirm-cancel"
-                onClick={cancelDelete}
-                disabled={deleting}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-      </>
+          <SavedProfileCard
+            slug={currentSlug}
+            form={form}
+            confirmDelete={confirmDelete}
+            deleting={deleting}
+            onStartDelete={startDelete}
+            onCancelDelete={cancelDelete}
+            onConfirmDelete={() => void confirmDeleteNow(currentSlug)}
+            onEdit={enterEdit}
+          />
+        </>
       )}
 
       {!isView && (
-      <div className="settings-form">
-        <h3>{isEdit ? `Edit profile: ${currentSlug}` : 'New profile'}</h3>
-
-        <div className="form-grid">
-          <label className={fieldErrors.slug ? 'field-error' : undefined}>
-            Slug (identifier, lowercase + hyphens)
-            <input
-              value={form.slug}
-              onChange={(e) => set('slug')(e.target.value.toLowerCase())}
-              disabled={!isCreate}
-              placeholder="e.g. acme-scm"
-              maxLength={40}
-              aria-invalid={!!fieldErrors.slug}
-            />
-            {fieldErrors.slug && <span className="field-error-text">{fieldErrors.slug}</span>}
-          </label>
-          <label className={fieldErrors.jira_cloud_url ? 'field-error' : undefined}>
-            Jira Cloud URL
-            <input
-              value={form.jira_cloud_url}
-              onChange={(e) => set('jira_cloud_url')(e.target.value)}
-              disabled={readOnly}
-              placeholder="https://your-domain.atlassian.net"
-              aria-invalid={!!fieldErrors.jira_cloud_url}
-            />
-            {fieldErrors.jira_cloud_url && (
-              <span className="field-error-text">{fieldErrors.jira_cloud_url}</span>
-            )}
-          </label>
-          <label className={fieldErrors.jira_email ? 'field-error' : undefined}>
-            Jira email
-            <input
-              value={form.jira_email}
-              onChange={(e) => set('jira_email')(e.target.value)}
-              disabled={readOnly}
-              placeholder="you@company.com"
-              aria-invalid={!!fieldErrors.jira_email}
-            />
-            {fieldErrors.jira_email && <span className="field-error-text">{fieldErrors.jira_email}</span>}
-          </label>
-          <label className={fieldErrors.jira_api_token ? 'field-error' : undefined}>
-            Jira API token {isEdit && <em>(blank = keep current)</em>}
-            <input
-              value={form.jira_api_token}
-              onChange={(e) => set('jira_api_token')(e.target.value)}
-              disabled={readOnly}
-              placeholder="ATATT3xFfGF..."
-              type="password"
-              autoComplete="off"
-              aria-invalid={!!fieldErrors.jira_api_token}
-            />
-            {fieldErrors.jira_api_token && (
-              <span className="field-error-text">{fieldErrors.jira_api_token}</span>
-            )}
-          </label>
-          <label>
-            Project keys (comma separated)
-            <input
-              value={form.jira_projects}
-              onChange={(e) => set('jira_projects')(e.target.value)}
-              disabled={readOnly}
-              placeholder="PFIN, MOS"
-            />
-          </label>
-          <label>
-            Story points field (optional — blank auto-detects)
-            <input
-              value={form.story_points_field}
-              onChange={(e) => set('story_points_field')(e.target.value)}
-              disabled={readOnly}
-              placeholder="customfield_10102"
-            />
-          </label>
-        </div>
-
-        <div className="form-grid">
-          <label>
-            LLM provider <em>(optional — skip for rule-based only)</em>
-            <select value={form.llm_provider} onChange={(e) => switchProvider(e.target.value)} disabled={readOnly}>
-              <option value="gemini">Gemini</option>
-              <option value="openrouter">OpenRouter</option>
-            </select>
-          </label>
-          <label>
-            Model
-            <input
-              value={form.llm_model}
-              onChange={(e) => set('llm_model')(e.target.value)}
-              disabled={readOnly}
-              placeholder={defaultModels[form.llm_provider] || 'gemini-flash-latest'}
-            />
-          </label>
-          <label className="form-full">
-            LLM API key {isEdit ? <em>(blank = keep current)</em> : <em>(optional — blank disables AI analysis)</em>}
-            <input
-              value={form.llm_api_key}
-              onChange={(e) => set('llm_api_key')(e.target.value)}
-              disabled={readOnly}
-              type="password"
-              autoComplete="off"
-              placeholder={form.llm_provider === 'gemini' ? 'AIza...' : 'sk-or-v1-...'}
-            />
-          </label>
-        </div>
-
-        {(fieldErrorList.length > 0 || message?.kind === 'err') && (
-          <div className="form-error-banner" role="alert">
-            {fieldErrorList.length > 0
-              ? fieldErrorList.map((m) => <span key={m}>{m}</span>)
-              : <span>{message?.text}</span>}
-          </div>
-        )}
-
-        <div className="form-actions">
-          {!isView && (
-            <button className="settings-btn" onClick={testConnection} disabled={testing || saving}>
-              <PlugZap size={16} strokeWidth={2} />
-              {testing ? 'Testing...' : 'Test Connection'}
-            </button>
-          )}
-          {!isView && (
-            <button className="settings-btn-primary" onClick={saveProfile} disabled={saving || testing}>
-              <Save size={16} strokeWidth={2} />
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          )}
-          {isEdit && (
-            <button className="settings-btn-danger" onClick={cancelEdit}>
-              <X size={16} strokeWidth={2} />
-              Cancel
-            </button>
-          )}
-        </div>
-
-        <div className="token-note privacy-note">
-          <p>
-            <strong>Test Connection</strong> checks your Jira and LLM settings without saving any data.
-          </p>
-          <p>
-            <strong>Save</strong> securely saves the profile. Your Jira token and LLM API key are encrypted. A browser access token is created and used to keep your requests secure.
-          </p>
-          <p>
-            See the{' '}
-            <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a> to learn how
-            your data is stored, used, and shared with the LLM during AI features.
-          </p>
-        </div>
-
-        {testResult && (
-          <div className={`test-result ${testResult.status === 'ok' ? 'ok' : 'partial'}`}>
-            <pre>{testResult.text}</pre>
-          </div>
-        )}
-      </div>
+        <ProfileForm
+          form={form}
+          currentSlug={currentSlug}
+          isCreate={isCreate}
+          isEdit={isEdit}
+          isView={isView}
+          readOnly={readOnly}
+          defaultModels={defaultModels}
+          fieldErrors={fieldErrors}
+          fieldErrorList={fieldErrorList}
+          message={message}
+          testing={testing}
+          saving={saving}
+          testResult={testResult}
+          onFieldChange={set}
+          onSwitchProvider={switchProvider}
+          onTestConnection={testConnection}
+          onSave={saveProfile}
+          onCancelEdit={cancelEdit}
+        />
       )}
     </div>
   )

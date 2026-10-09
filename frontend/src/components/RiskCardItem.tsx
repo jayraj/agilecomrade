@@ -3,7 +3,7 @@ import { AlertCircle } from 'lucide-react'
 import {
   describeAiFallback,
   riskTitle,
-  severityFromScore,
+  severityOf,
   formatRiskType,
   sanitizeInlineHtml,
   sprintOverdueDays,
@@ -96,7 +96,7 @@ export default function RiskCardItem({
   deciding,
   offline,
 }: RiskCardItemProps) {
-  const severity = (severityFromScore(blocker.risk_score) || blocker.severity || 'MEDIUM').toUpperCase()
+  const severity = severityOf(blocker)
   const sevClass = SEVERITY_CLASS[severity] || 'medium'
   const title = riskTitle(blocker)
   const categoryLabel = blocker.type ? formatRiskType(blocker.type) : ''
