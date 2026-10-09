@@ -619,16 +619,25 @@ def run():
 
     _here = os.path.dirname(os.path.abspath(__file__))
     src_main = open(os.path.join(_here, "main.py")).read()
+    # Routes are split across api/routers; fold them in when source-parsing the
+    # API layer (scope seed endpoint, diagnostic logs, etc.).
+    _routers_dir = os.path.join(_here, "api", "routers")
+    src_routers = "".join(
+        open(os.path.join(_routers_dir, name)).read()
+        for name in sorted(os.listdir(_routers_dir))
+        if name.endswith(".py")
+    )
+    src_api = src_main + src_routers
     # The auto-baseline/persistence logic lives in the snapshot service; the
     # seed endpoint and its diagnostic stay in the API layer.
     src_refresh = open(os.path.join(_here, "services", "snapshot_service.py")).read()
-    src_scope = src_main + src_refresh
+    src_scope = src_api + src_refresh
     captures = "baselines[name] = {" in src_scope and "late_capture" in src_scope
     persists = '"scope_meta": scope_meta' in src_scope.replace("'", '"') or 'scope_meta=scope_meta' in src_scope
     results.append(check("Scope: auto-baseline on first active sync persisted via snapshot",
                          1 if (captures and persists) else 0, 1, tol=0))
 
-    seeded = "scope-baseline" in src_main and '"manual": True' in src_main.replace("'", '"')
+    seeded = "scope-baseline" in src_api and '"manual": True' in src_api.replace("'", '"')
     diag = "🔭 Scope[" in src_scope
     results.append(check("Scope: manual seed endpoint + per-sync diagnostic log",
                          1 if (seeded and diag) else 0, 1, tol=0))
