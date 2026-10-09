@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, ClipboardPlus } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import {
   describeAiFallback,
   riskTitle,
@@ -16,8 +16,6 @@ interface RiskCardItemProps {
   endDate?: string
   hideSignal?: boolean
   showDraft?: boolean
-  /** Shows the "Add to Risk Register" hand-off. Gated off for future sprints. */
-  showRegister?: boolean
   drafting?: boolean
   onDraft?: () => void
   draft?: string
@@ -88,7 +86,6 @@ export default function RiskCardItem({
   endDate,
   hideSignal,
   showDraft,
-  showRegister,
   drafting,
   onDraft,
   draft,
@@ -104,6 +101,7 @@ export default function RiskCardItem({
   const title = riskTitle(blocker)
   const categoryLabel = blocker.type ? formatRiskType(blocker.type) : ''
   const issueKey = blocker.issue_key
+  const drivers = scoreDrivers(blocker)
 
   const rec = (blocker.recommendation || '').trim()
   const recParts = rec.match(/^(.*?[.!?])\s+(.*)$/)
@@ -137,11 +135,6 @@ export default function RiskCardItem({
     void onDecide(status, note)
   }
 
-  // Placeholder until the risk-register write lands (Excel export or in-app).
-  const handleAddToRegister = (): void => {
-    alert('This feature is coming soon!')
-  }
-
   return (
     <div className={`risk-card-item ${sevClass}`}>
       <div className="risk-card-item-header">
@@ -160,31 +153,10 @@ export default function RiskCardItem({
 
       {!hideSignal && blocker.signal && (
         <div className="risk-signal">
-          {scoreDrivers(blocker).length > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '6px',
-                marginBottom: '10px',
-              }}
-            >
-              {scoreDrivers(blocker).map((c, i) => (
-                <span
-                  key={i}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: '#3f3f46',
-                    background: '#f4f4f5',
-                    border: '1px solid #e4e4e7',
-                    borderRadius: '999px',
-                    padding: '3px 9px',
-                  }}
-                >
+          {drivers.length > 0 && (
+            <div className="risk-driver-chips">
+              {drivers.map((c, i) => (
+                <span key={i} className="risk-driver-chip">
                   {c.icon && <span aria-hidden>{c.icon}</span>}
                   {c.label}
                 </span>
@@ -287,12 +259,6 @@ export default function RiskCardItem({
                   {option}
                 </button>
               ))}
-              {showRegister && (
-                <button type="button" className="register-btn" onClick={handleAddToRegister}>
-                  <ClipboardPlus size={16} />
-                  Add to Risk Register
-                </button>
-              )}
             </div>
             {noteVisible && (
               <div className="risk-decision-note-row">

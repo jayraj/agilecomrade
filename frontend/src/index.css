@@ -1086,69 +1086,6 @@ body {
   flex-shrink: 0;
 }
 
-.radar-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.details-btn {
-  background: var(--color-secondary-100);
-  color: var(--color-secondary-700);
-  border: 1px solid var(--color-secondary-300);
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 150ms ease, transform 0.2s;
-  white-space: nowrap;
-}
-
-.details-btn:hover {
-  background: var(--color-secondary-200);
-  color: var(--color-secondary-800);
-  transform: scale(1.04);
-}
-
-.details-btn:active:not(:disabled) {
-  background: var(--color-secondary-300);
-}
-
-.details-btn:focus-visible {
-  outline: 3px solid var(--color-primary-200);
-  outline-offset: 2px;
-}
-
-.risk-type-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.risk-type-badge.critical {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.risk-type-badge.high {
-  background: #fed7aa;
-  color: #92400e;
-}
-
-.risk-type-badge.medium {
-  background: #fef3c7;
-  color: #854d0e;
-}
-
-.risk-type-badge.low {
-  background: #d1fae5;
-  color: #065f46;
-}
-
 .draft-btn {
   width: 100%;
   background: var(--color-secondary-100);
@@ -1392,8 +1329,7 @@ body {
   margin: 10px 0 4px 0;
 }
 
-.prompt-block pre,
-.ai-detail-pre {
+.prompt-block pre {
   background: #1e293b;
   color: #e2e8f0;
   font-size: 11px;
@@ -2410,46 +2346,8 @@ body {
   margin: 0 0 4px 0;
 }
 
-.risk-card-item-desc {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--color-neutral-500);
-  margin: 0;
-}
-
 .risk-card-item .draft-btn {
   margin-top: 10px;
-}
-
-/* ---------- risk register hand-off ---------- */
-.register-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  background: var(--color-secondary-100);
-  color: var(--color-secondary-700);
-  border: 1px solid var(--color-secondary-300);
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.register-btn:hover:not(:disabled) {
-  background: var(--color-secondary-200);
-}
-
-.register-btn:focus-visible {
-  outline: 2px solid var(--color-primary-300);
-  outline-offset: 2px;
-}
-
-/* Shares the horizontal decision-action row, so drop the stacked-layout offset. */
-.risk-decision-actions .register-btn {
-  margin-top: 0;
 }
 
 /* ---------- risk transparency (signal → cause → action → decision) ---------- */
@@ -2468,6 +2366,26 @@ body {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border-color);
+}
+
+.risk-driver-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.risk-driver-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-secondary-800);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 3px 9px;
 }
 
 .risk-signal-headline {

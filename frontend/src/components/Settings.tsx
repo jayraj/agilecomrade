@@ -6,6 +6,7 @@ import {
   apiCreateProfile,
   apiDeleteProfile,
   apiErrorMessage,
+  apiErrorStatus,
   apiGetProfile,
   apiTestConfig,
   apiUpdateProfile,
@@ -157,7 +158,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
       setAccessToken('')
       setMode(asEdit ? 'edit' : 'view')
     } catch (error) {
-      const status = (error as { response?: { status?: number } })?.response?.status
+      const status = apiErrorStatus(error)
       if (status === 401 || status === 403) {
         setMessage({
           kind: 'err',
@@ -245,13 +246,14 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
         if (accessToken) body.access_token = accessToken
         try {
           const updateResponse = await apiUpdateProfile(currentSlug, body)
-          if (updateResponse.access_token) {
-            const list = profileApi.list().map((p) => (p.slug === currentSlug ? { ...p, token: updateResponse.access_token! } : p))
+          const updatedToken = updateResponse.access_token
+          if (updatedToken) {
+            const list = profileApi.list().map((p) => (p.slug === currentSlug ? { ...p, token: updatedToken } : p))
             profileApi.save(list)
           }
           setMessage({ kind: 'ok', text: `Profile '${currentSlug}' updated.` })
         } catch (error) {
-          const status = (error as { response?: { status?: number } })?.response?.status
+          const status = apiErrorStatus(error)
           if (status !== 401 && status !== 403) throw error
           // The profile row no longer exists server-side (deleted outside this
           // browser), so the auth-gated PUT can never succeed. Re-create it
@@ -270,7 +272,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
           try {
             response = await apiCreateProfile({ slug: currentSlug, access_token: token, ...body })
           } catch (createError) {
-            const createStatus = (createError as { response?: { status?: number } })?.response?.status
+            const createStatus = apiErrorStatus(createError)
             if (createStatus !== 409) throw createError
             // Row exists but our token doesn't match it — no way to recover the
             // old token (only its hash is stored), so a new slug is required.
@@ -336,7 +338,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
       try {
         await apiDeleteProfile(slug)
       } catch (error) {
-        const status = (error as { response?: { status?: number } })?.response?.status
+        const status = apiErrorStatus(error)
         if (status !== 404) throw error
         // 404 means the row is already gone server-side — that's the state we
         // want, so fall through and clear the local profile as well.
