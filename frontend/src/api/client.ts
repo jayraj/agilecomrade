@@ -18,7 +18,7 @@ export const apiErrorMessage = (error: unknown): string => {
     if (data?.error) return data.error
     if (!error.response) {
       if (error.code === 'ECONNABORTED') return error.message // request timeout
-      return `Backend unreachable at ${API_BASE} — start it with: cd backend && ./venv/bin/python main.py`
+      return 'The server is unreachable. Please check your connection and try again.'
     }
     return error.message || `Request failed with status code ${error.response?.status ?? 500}`
   }
