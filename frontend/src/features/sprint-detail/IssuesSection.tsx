@@ -58,6 +58,7 @@ export default function IssuesSection({
               endDate={end}
               hideSignal={isFuture}
               showDraft={!isFuture && !!blocker.issue_key && !offline}
+              showRegister={!isFuture && !offline}
               drafting={draftingKey === blocker.issue_key}
               onDraft={() => onDraft(blocker)}
               draft={blocker.issue_key ? drafts[blocker.issue_key] : undefined}

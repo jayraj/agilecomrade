@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertCircle, ClipboardPlus } from 'lucide-react'
 import {
   describeAiFallback,
   riskTitle,
@@ -15,6 +15,8 @@ interface RiskCardItemProps {
   endDate?: string
   hideSignal?: boolean
   showDraft?: boolean
+  /** Shows the "Add to Risk Register" hand-off. Gated off for future sprints. */
+  showRegister?: boolean
   drafting?: boolean
   onDraft?: () => void
   draft?: string
@@ -79,6 +81,7 @@ export default function RiskCardItem({
   endDate,
   hideSignal,
   showDraft,
+  showRegister,
   drafting,
   onDraft,
   draft,
@@ -112,6 +115,13 @@ export default function RiskCardItem({
   const [pendingStatus, setPendingStatus] = useState<RiskDecisionStatus | null>(null)
   const [note, setNote] = useState('')
   const [noteVisible, setNoteVisible] = useState(false)
+  const [registerNotice, setRegisterNotice] = useState(false)
+
+  useEffect(() => {
+    if (!registerNotice) return
+    const id = setTimeout(() => setRegisterNotice(false), 4000)
+    return () => clearTimeout(id)
+  }, [registerNotice])
 
   const status = pendingStatus ?? blocker.decision?.status ?? 'pending'
   const decisionMeta = DECISION_META[status] ?? DECISION_META.pending
@@ -253,7 +263,16 @@ export default function RiskCardItem({
                   {option}
                 </button>
               ))}
+              {showRegister && (
+                <button type="button" className="register-btn" onClick={() => setRegisterNotice(true)}>
+                  <ClipboardPlus size={16} />
+                  Add to Risk Register
+                </button>
+              )}
             </div>
+            {registerNotice && (
+              <p className="form-message ok" role="status">Risk register is coming soon.</p>
+            )}
             {noteVisible && (
               <div className="risk-decision-note-row">
                 <input
