@@ -1146,11 +1146,6 @@ body {
   background: var(--color-primary-200);
 }
 
-.draft-text a {
-  color: var(--color-primary-600);
-  text-decoration: underline;
-}
-
 .risk-cause-text a {
   color: var(--color-primary-600);
   text-decoration: underline;
