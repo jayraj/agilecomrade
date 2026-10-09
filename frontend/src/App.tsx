@@ -5,16 +5,17 @@ import TopStrip from './components/TopStrip'
 import DetailSidebar, { type DetailSelection } from './features/sprint-detail/DetailSidebar'
 import AppRoutes from './app/routes'
 import AppProviders from './app/providers'
+import { SYNC_INTERVAL_SECONDS } from './app/config'
 import { apiSyncNow, FEEDBACK_URL, profileApi } from './api'
 import { subscribeLastSync, useSnapshot } from './hooks/useSnapshot'
 import { formatLastSync } from './utils/format'
 
 export default function App() {
-  const [profiles, setProfiles] = useState(() => profileApi.list())
   const [activeProfile, setActiveProfile] = useState(() => profileApi.activeSlug())
   const [lastSync, setLastSync] = useState('Never')
   const [syncing, setSyncing] = useState(false)
-  const [syncIntervalSeconds] = useState(300)
+  const [syncMessage, setSyncMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [syncIntervalSeconds] = useState(SYNC_INTERVAL_SECONDS)
   const [refreshKey, setRefreshKey] = useState(0)
   const [detail, setDetail] = useState<DetailSelection | null>(null)
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(
@@ -36,7 +37,11 @@ export default function App() {
     return unsubscribe
   }, [])
 
-  const refreshProfiles = () => setProfiles(profileApi.list())
+  useEffect(() => {
+    if (!syncMessage) return
+    const id = setTimeout(() => setSyncMessage(null), 4000)
+    return () => clearTimeout(id)
+  }, [syncMessage])
 
   // `null` clears the active profile (used after a delete) so the home route
   // falls back to the "No profile configured yet" empty state instead of
@@ -53,10 +58,10 @@ export default function App() {
       const response = await apiSyncNow()
       setLastSync(formatLastSync(response.last_sync))
       setRefreshKey((k) => k + 1)
-      alert('Sync completed!')
+      setSyncMessage({ kind: 'ok', text: 'Sync completed!' })
     } catch (error) {
       console.error('Error syncing:', error)
-      alert('Sync failed. Check the profile configuration.')
+      setSyncMessage({ kind: 'err', text: 'Sync failed. Check the profile configuration.' })
     } finally {
       setSyncing(false)
     }
@@ -69,9 +74,14 @@ export default function App() {
         syncing={syncing}
         offline={offline}
         onSyncNow={syncNow}
-        profiles={profiles}
         activeProfile={activeProfile}
       />
+
+      {syncMessage && (
+        <div className={`form-message ${syncMessage.kind}`} role="status">
+          {syncMessage.text}
+        </div>
+      )}
 
       {!disclaimerDismissed && (
         <div className="disclaimer-banner" role="note">
@@ -83,6 +93,7 @@ export default function App() {
             <a href="/privacy.html" target="_blank" rel="noreferrer">Learn more →</a>
           </span>
           <button
+            type="button"
             className="disclaimer-dismiss"
             onClick={dismissDisclaimer}
             aria-label="Dismiss disclaimer"
@@ -98,7 +109,6 @@ export default function App() {
             <AppRoutes
               hasProfile={!!activeProfile}
               onSelectDetail={setDetail}
-              onProfilesChanged={refreshProfiles}
               onSelectProfile={handleSelectProfile}
             />
           </main>

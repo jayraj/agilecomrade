@@ -158,19 +158,19 @@ export default function ProfileForm({
 
       <div className="form-actions">
         {!isView && (
-          <button className="settings-btn" onClick={onTestConnection} disabled={testing || saving}>
+          <button type="button" className="settings-btn" onClick={onTestConnection} disabled={testing || saving}>
             <PlugZap size={16} strokeWidth={2} />
             {testing ? 'Testing...' : 'Test Connection'}
           </button>
         )}
         {!isView && (
-          <button className="settings-btn-primary" onClick={onSave} disabled={saving || testing}>
+          <button type="button" className="settings-btn-primary" onClick={onSave} disabled={saving || testing}>
             <Save size={16} strokeWidth={2} />
             {saving ? 'Saving...' : 'Save'}
           </button>
         )}
         {isEdit && (
-          <button className="settings-btn-danger" onClick={onCancelEdit}>
+          <button type="button" className="settings-btn-danger" onClick={onCancelEdit}>
             <X size={16} strokeWidth={2} />
             Cancel
           </button>

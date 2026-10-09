@@ -135,7 +135,7 @@ export default function SprintCard({ data, blockers = [], eyebrow = 'ACTIVE SPRI
           )}
         </div>
         {onDetails ? (
-          <button className="sprint-card-details" onClick={onDetails}>
+          <button type="button" className="sprint-card-details" onClick={onDetails}>
             Details <ArrowRight size={12} className="sprint-card-details-arrow" />
           </button>
         ) : (

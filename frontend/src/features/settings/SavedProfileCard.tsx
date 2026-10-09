@@ -25,6 +25,7 @@ export default function SavedProfileCard({
   return (
     <div className="saved-profile-card">
       <button
+        type="button"
         className="saved-profile-delete"
         aria-label="Delete profile"
         aria-expanded={confirmDelete}
@@ -56,7 +57,7 @@ export default function SavedProfileCard({
               </span>
             </div>
           </div>
-          <button className="saved-profile-edit" onClick={onEdit} disabled={deleting}>
+          <button type="button" className="saved-profile-edit" onClick={onEdit} disabled={deleting}>
             <PenLine size={14} strokeWidth={2} />
             Edit
           </button>

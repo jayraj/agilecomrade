@@ -5,11 +5,10 @@ import ProfileForm from './ProfileForm'
 import { useProfileSettings } from './useProfileSettings'
 
 interface SettingsProps {
-  onProfilesChanged: () => void
   onSelectProfile: (slug: string | null) => void
 }
 
-export default function Settings({ onProfilesChanged, onSelectProfile }: SettingsProps) {
+export default function Settings({ onSelectProfile }: SettingsProps) {
   const {
     form,
     currentSlug,
@@ -35,7 +34,7 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
     startDelete,
     cancelDelete,
     confirmDeleteNow,
-  } = useProfileSettings(onProfilesChanged, onSelectProfile)
+  } = useProfileSettings(onSelectProfile)
 
   return (
     <div className="settings-page">

@@ -46,7 +46,6 @@ export interface ProfileSettings {
  * Settings page so the component stays presentational.
  */
 export const useProfileSettings = (
-  onProfilesChanged: () => void,
   onSelectProfile: (slug: string | null) => void,
 ): ProfileSettings => {
   const [initialActive] = useState(() => profileApi.active())
@@ -87,8 +86,6 @@ export const useProfileSettings = (
     if (initialActive) loadIntoForm(initialActive.slug, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const refreshProfiles = () => onProfilesChanged()
 
   const set = (key: keyof FormState) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }))
@@ -283,7 +280,6 @@ export const useProfileSettings = (
       }
       setAccessToken('')
       setMode('view')
-      refreshProfiles()
     } catch (error) {
       setMessage({ kind: 'err', text: apiErrorMessage(error) })
     } finally {
@@ -321,7 +317,6 @@ export const useProfileSettings = (
       profileApi.remove(slug)
       void clearOfflineSnapshot(slug)
       onSelectProfile(null)
-      refreshProfiles()
       setMessage({ kind: 'ok', text: `Profile '${slug}' deleted.` })
       setCurrentSlug(null)
       setForm(EMPTY_FORM)

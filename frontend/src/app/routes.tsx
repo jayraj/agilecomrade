@@ -8,7 +8,6 @@ import type { DetailSelection } from '../features/sprint-detail/DetailSidebar'
 interface AppRoutesProps {
   hasProfile: boolean
   onSelectDetail: (selection: DetailSelection) => void
-  onProfilesChanged: () => void
   onSelectProfile: (slug: string | null) => void
 }
 
@@ -53,7 +52,6 @@ function EmptyProfileState() {
 export default function AppRoutes({
   hasProfile,
   onSelectDetail,
-  onProfilesChanged,
   onSelectProfile,
 }: AppRoutesProps) {
   return (
@@ -66,7 +64,7 @@ export default function AppRoutes({
       <Route path="/future/:projectKey" element={<FutureSprintRoute />} />
       <Route
         path="/settings"
-        element={<Settings onProfilesChanged={onProfilesChanged} onSelectProfile={onSelectProfile} />}
+        element={<Settings onSelectProfile={onSelectProfile} />}
       />
       <Route path="*" element={<NotFound />} />
     </Routes>

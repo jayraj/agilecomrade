@@ -35,7 +35,7 @@ export default function SprintDetailHeader({ sprintKey, projectKey, dayLabel, st
           )}
         </div>
       </div>
-      <button className="detail-shell-close" onClick={onClose} aria-label="Close details">
+      <button type="button" className="detail-shell-close" onClick={onClose} aria-label="Close details">
         <X size={15} />
       </button>
     </header>
