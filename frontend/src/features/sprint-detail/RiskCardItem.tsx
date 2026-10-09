@@ -8,8 +8,8 @@ import {
   draftToPlainText,
   sprintOverdueDays,
   scoreDrivers,
-} from '../utils/format'
-import type { Blocker, RiskDecisionStatus } from '../api/client'
+} from '../../utils/format'
+import type { Blocker, RiskDecisionStatus } from '../../api/client'
 
 interface RiskCardItemProps {
   blocker: Blocker

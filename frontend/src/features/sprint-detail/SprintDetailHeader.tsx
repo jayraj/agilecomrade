@@ -1,5 +1,5 @@
 import { Calendar, ChevronRight, Clock, X } from 'lucide-react'
-import { formatDate } from '../utils/format'
+import { formatDate } from '../../utils/format'
 
 interface SprintDetailHeaderProps {
   sprintKey: string

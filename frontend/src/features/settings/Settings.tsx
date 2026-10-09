@@ -10,16 +10,16 @@ import {
   apiGetProfile,
   apiTestConfig,
   apiUpdateProfile,
-} from '../api/client'
-import { profileApi } from '../api/config'
-import { clearOfflineSnapshot } from '../utils/offlineCache'
+} from '../../api/client'
+import { profileApi } from '../../api/config'
+import { clearOfflineSnapshot } from '../../utils/offlineCache'
 import {
   EMPTY_FORM,
   isValidatedKey,
   validateForm,
   type FormState,
   type ValidatedKey,
-} from '../utils/settingsForm'
+} from './settingsForm'
 import SavedProfileCard from './SavedProfileCard'
 import ProfileForm from './ProfileForm'
 

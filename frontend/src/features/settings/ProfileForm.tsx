@@ -1,5 +1,5 @@
 import { PlugZap, Save, X } from 'lucide-react'
-import type { FormState, ValidatedKey } from '../utils/settingsForm'
+import type { FormState, ValidatedKey } from './settingsForm'
 
 interface ProfileFormProps {
   form: FormState

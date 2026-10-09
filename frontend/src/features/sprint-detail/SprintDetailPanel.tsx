@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Layers, ShieldAlert, Sparkles } from 'lucide-react'
-import { useSnapshot } from '../hooks/useSnapshot'
-import { useSync } from '../context/SyncContext'
+import { useSnapshot } from '../../hooks/useSnapshot'
+import { useSync } from '../../context/SyncContext'
 import {
   apiGenerateFollowup,
   apiGenerateMitigations,
@@ -16,9 +16,9 @@ import {
   type NextSprintProject,
   type RiskDecision,
   type RiskDecisionStatus,
-} from '../api/client'
-import { SEVERITY_RANK, severityFromScore, sprintDayLabel, draftToPlainText } from '../utils/format'
-import SprintGauge from './SprintGauge'
+} from '../../api/client'
+import { SEVERITY_RANK, severityFromScore, sprintDayLabel, draftToPlainText } from '../../utils/format'
+import SprintGauge from '../dashboard/SprintGauge'
 import SprintDetailHeader from './SprintDetailHeader'
 import MitigationPlanCard from './MitigationPlanCard'
 import RiskCardItem from './RiskCardItem'

@@ -13,11 +13,11 @@ import {
   type TooltipItem,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
-import { useSnapshot } from '../hooks/useSnapshot'
-import { useSync } from '../context/SyncContext'
-import SectionHeader from './SectionHeader'
-import type { VelocitySprint } from '../api/client'
-import { shortSprintName } from '../utils/format'
+import { useSnapshot } from '../../hooks/useSnapshot'
+import { useSync } from '../../context/SyncContext'
+import SectionHeader from '../../components/SectionHeader'
+import type { VelocitySprint } from '../../api/client'
+import { shortSprintName } from '../../utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip)
 

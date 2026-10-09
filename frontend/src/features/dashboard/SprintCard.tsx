@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Layers, Zap, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
-import { sprintDayLabel, severityOf, getRiskColor } from '../utils/format'
+import { sprintDayLabel, severityOf, getRiskColor } from '../../utils/format'
 import SprintGauge from './SprintGauge'
-import type { Blocker } from '../api/client'
+import type { Blocker } from '../../api/client'
 
 const SEVERITY_BADGE: Record<string, { bg: string; text: string; dot: string; label: string }> = {
   CRITICAL: { bg: 'var(--badge-critical-bg)', text: 'var(--badge-critical-text)', dot: 'var(--badge-critical-dot)', label: 'critical' },

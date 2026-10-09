@@ -1,5 +1,5 @@
 import { Cpu, Globe, PenLine, X } from 'lucide-react'
-import type { FormState } from '../utils/settingsForm'
+import type { FormState } from './settingsForm'
 
 interface SavedProfileCardProps {
   slug: string
