@@ -55,7 +55,10 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
   const { snapshot, loading, error, noProfile, offline } = useSnapshot(syncIntervalSeconds, refreshKey)
   const isFuture = kind === 'future'
 
-  const [mitigations, setMitigations] = useState<Mitigation[]>(snapshot?.mitigations ?? [])
+  // The freshly generated plan takes precedence; otherwise fall back to the
+  // plan persisted on the snapshot so it survives a hard refresh.
+  const [generatedMitigations, setGeneratedMitigations] = useState<Mitigation[] | null>(null)
+  const mitigations: Mitigation[] = generatedMitigations ?? snapshot?.mitigations ?? []
   const [generating, setGenerating] = useState(false)
   const [draftingKey, setDraftingKey] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -96,7 +99,10 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
   )
 
   const sprintMitigation = mitigations.find((m) => m.sprint_key === sprintKey) || null
-  const planVisible = !!sprintKey && planRequestedFor === sprintKey
+  // Reveal a plan once the user requests one, or whenever a plan for this
+  // sprint is already persisted — so a saved plan survives a hard refresh
+  // instead of requiring a fresh (billable) regeneration.
+  const planVisible = !!sprintKey && (planRequestedFor === sprintKey || sprintMitigation !== null)
 
   const sprintDataEntry = sprintKey
     ? Object.values(snapshot?.sprint_data ?? {}).find((d) => d.sprint?.name === sprintKey)
@@ -164,7 +170,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     setGenerating(true)
     try {
       const response = await apiGenerateMitigations(sprintKey)
-      setMitigations(response.mitigations)
+      setGeneratedMitigations(response.mitigations)
     } catch (e) {
       console.error('Error generating mitigations:', e)
     } finally {

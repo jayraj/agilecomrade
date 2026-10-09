@@ -9,7 +9,7 @@ Also provides the stable `risk_id` (the key under which human decisions are
 persisted across syncs) and reconciliation of the decision ledger.
 """
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from risk_matrix import IMPACT_LABELS, PROBABILITY_LABELS
@@ -561,7 +561,7 @@ def reconcile_decisions(risks: list[dict], risk_decisions: dict) -> dict:
     - Caps the ledger size to keep the snapshot bounded.
     """
     current_ids = {r.get("risk_id") for r in risks if r.get("risk_id")}
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     out: dict = {}
     for rid, dec in risk_decisions.items():
         d = dict(dec or {})

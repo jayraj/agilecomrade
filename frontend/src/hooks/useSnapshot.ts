@@ -48,8 +48,13 @@ export const subscribeLastSync = (listener: (lastSync: string | null) => void): 
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollIntervalMs = 0
 let activeSlug: string | null = null
 let inflight: Promise<void> | null = null
+// Number of mounted hooks driving the shared poller. Only the last one to
+// unmount stops it; this keeps polling alive while any view needs it and
+// prevents one component's cleanup from cancelling another's.
+let pollSubscribers = 0
 
 const applySnapshot = (data: Snapshot): void => {
   setStore({ snapshot: data, error: null, loading: false, offline: false })
@@ -114,7 +119,13 @@ const doFetch = (): Promise<void> => {
 const startPolling = (slug: string, intervalSeconds: number): void => {
   activeSlug = slug
   const intervalMs = Math.max(intervalSeconds, 10) * 1000
+  // Reschedule when the interval changes; otherwise reuse the running timer.
+  if (pollTimer && pollIntervalMs !== intervalMs) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
   if (!pollTimer) {
+    pollIntervalMs = intervalMs
     pollTimer = setInterval(() => void doFetch(), intervalMs)
   }
   if (!current.snapshot) {
@@ -128,6 +139,7 @@ const stopPolling = (): void => {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  pollIntervalMs = 0
   activeSlug = null
   inflight = null
 }
@@ -146,21 +158,38 @@ export function useSnapshot(syncIntervalSeconds: number, refreshKey = 0): Snapsh
   const slug = active?.slug
 
   useEffect(() => {
+    pollSubscribers += 1
     const profiles = profileApi.list()
-    if (!slug || !profiles.some((p) => p.slug === slug)) {
-      setStore({ noProfile: true, snapshot: null, loading: false, error: null, offline: false })
-      stopPolling()
-      return
-    }
-    setStore({ noProfile: false })
-    startPolling(slug, syncIntervalSeconds)
+    const hasProfile = !!slug && profiles.some((p) => p.slug === slug)
 
     const onOnline = (): void => {
       void doFetch()
     }
-    window.addEventListener('online', onOnline)
+    // Going offline won't fail until the next request; trigger one so the
+    // offline badge/state reflects reality promptly instead of up to a full
+    // poll interval later.
+    const onOffline = (): void => {
+      void doFetch()
+    }
+
+    if (!hasProfile) {
+      setStore({ noProfile: true, snapshot: null, loading: false, error: null, offline: false })
+      stopPolling()
+    } else {
+      setStore({ noProfile: false })
+      startPolling(slug, syncIntervalSeconds)
+      window.addEventListener('online', onOnline)
+      window.addEventListener('offline', onOffline)
+    }
+
     return () => {
       window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+      pollSubscribers -= 1
+      if (pollSubscribers <= 0) {
+        pollSubscribers = 0
+        stopPolling()
+      }
     }
   }, [slug, syncIntervalSeconds, refreshKey])
 

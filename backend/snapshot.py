@@ -8,7 +8,7 @@ the whole dashboard from a single cached snapshot.
 
 from datetime import datetime, timedelta
 
-from risk_components import is_done, to_utc
+from risk_components import is_done, now_utc, to_utc
 from risk_engine import RiskEngine
 from risk_explainer import (
     PENDING_STATUS,
@@ -299,15 +299,16 @@ def _build_delivery_health(sprint_data, next_sprint_data, velocity_data, risks, 
             daily_rate = avg_vel / duration_days
             if daily_rate > 0 and remaining_sp > 0:
                 forecast_days = remaining_sp / daily_rate
-                forecast_date = (datetime.utcnow() + timedelta(days=forecast_days)).date().isoformat()
+                forecast_date = (now_utc() + timedelta(days=forecast_days)).date().isoformat()
             elif remaining_sp <= 0:
-                forecast_date = datetime.utcnow().date().isoformat()
+                forecast_date = now_utc().date().isoformat()
 
         try:
             planned_end_dt = to_utc(planned_end) if planned_end else None
             if planned_end_dt and forecast_date:
-                forecast_dt = datetime.strptime(forecast_date, "%Y-%m-%d")
-                forecast_delay_days = (forecast_dt - planned_end_dt.replace(tzinfo=None, hour=0, minute=0, second=0)).days
+                forecast_dt = datetime.strptime(forecast_date, "%Y-%m-%d").replace(tzinfo=planned_end_dt.tzinfo)
+                planned_end_day = planned_end_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                forecast_delay_days = (forecast_dt - planned_end_day).days
         except Exception:
             forecast_delay_days = 0
 
