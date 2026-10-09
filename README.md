@@ -12,13 +12,18 @@ matrix** (`backend/risk_matrix.py`).
 
 ```
 agilecomrade/
-├── sql/migration.sql         # profiles table + RLS (run in Supabase SQL editor)
+├── sql/migration.sql         # profiles + kv_store tables + RLS (run in Supabase SQL editor)
 ├── backend/                  # FastAPI app (token-gated)
 │   ├── vercel.json           # /api/* -> Python function
 │   ├── .vercelignore         # keeps venv/data out of the lambda
 │   ├── requirements.txt      # Python deps
 │   ├── api/index.py          # Serverless shim -> main.app
-│   ├── main.py               # FastAPI app
+│   ├── api/deps.py           # Shared deps: auth, client IP, rate limit, error envelope
+│   ├── api/routers/          # meta / profiles / snapshot / risk endpoints
+│   ├── main.py               # App factory: middleware + handlers + routers
+│   ├── services/             # profile_service (config CRUD) + snapshot_service (refresh/locks)
+│   ├── state/                # Pluggable StateBackend: memory | supabase (rates, locks, caches)
+│   ├── validation.py         # Slug/Jira-URL validators + upstream error scrubbing
 │   ├── config.py             # Settings (env) + UserConfig (per-profile)
 │   ├── crypto.py             # Fernet (AES-128-CBC + HMAC-SHA256) at rest + SHA-256 token hash
 │   ├── supabase_store.py     # PostgREST CRUD for `profiles` (service-role only)
@@ -30,11 +35,12 @@ agilecomrade/
 │   └── validate_rubric.py    # Example assertions for the risk model
 └── frontend/                 # Vite React-TS app
     └── src/
-        ├── api/config.ts     # localStorage profile slug+token store
-        ├── api/client.ts     # Axios client (X-SRR auth headers) + typed endpoints
+        ├── api/              # axios client + typed endpoints + shared types
+        ├── app/              # config, providers, routes
+        ├── features/         # dashboard / settings / sprint-detail (co-located hooks)
+        ├── components/       # shared chrome: TopStrip, SectionHeader, ErrorBoundary
         ├── hooks/useSnapshot.ts
-        ├── utils/format.ts   # Severity colors (80/60/20), risk labels, dates
-        └── components/       # RiskRadar, NextSprintOverview, ExecutiveDashboard, SprintOverview, Settings, TopStrip
+        └── utils/            # format.ts (dates/labels) + severity.ts (score → band/color)
 ```
 
 ## How multi-tenancy works
@@ -70,8 +76,18 @@ Copy `.env.example` and fill in (local: `backend/.env`):
 ENCRYPTION_KEY=            # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001,https://<frontend>.vercel.app
+SRR_STATE_BACKEND=         # memory (default) | supabase — see "Shared state" below
 ```
+
+### Shared state (`SRR_STATE_BACKEND`)
+
+Rate limits, per-profile refresh locks, and the LLM/Jira-timezone caches live
+behind a `StateBackend` (`backend/state/`). The default **memory** backend keeps
+them per-process. Set **`SRR_STATE_BACKEND=supabase`** to store them in the
+`kv_store` table so the limits and locks hold across serverless instances (the
+`kv_incr` / `kv_acquire_lock` RPCs from `sql/migration.sql` must be applied).
+State is treated as an optimization: if the backend errors, requests **fail open**
+(degrade to allow/miss) rather than failing.
 
 The `JIRA_*` / `GEMINI_*` / `OPENROUTER_*` vars are only **defaults** shown on the
 Settings screen — each profile supplies its own via the UI.

@@ -6,11 +6,11 @@ Rules and guidelines to follow when generating code for the Agile Comrade app.
 
 - Prefer responsive, well-structured layouts using flexbox and CSS grid over absolute positioning.
 - Use plain, named CSS classes in `frontend/src/index.css` — do **not** use Tailwind utility classes, even though Tailwind is installed.
-- Keep components in `frontend/src/components/` (one component per file) and helpers in `frontend/src/utils/format.ts`.
+- Keep components one-per-file: shared chrome in `frontend/src/components/`, feature-specific UI co-located under `frontend/src/features/<feature>/`; helpers in `frontend/src/utils/` (`format.ts`, `severity.ts`).
 - Reuse existing UI components and CSS classes; don't duplicate styles or components.
 - Icons are lucide-react (`strokeWidth={2}` default) sized via the `size` prop: 16 inside buttons, 20 inline, 24 for section titles. Default color `#52525b`. Emojis are acceptable for UI labels/titles.
 - After any change, run `npm run lint && npm run typecheck && npm run test && npm run build` in `frontend/`; backend changes must pass `python3 -m pytest` and `python3 validate_rubric.py` in `backend/`. CI (`.github/workflows/ci.yml`) runs these same gates on every PR.
-- Backend risk data flows through `backend/risk_engine.py`, `backend/snapshot.py`, and the frontend `Blocker` type in `frontend/src/api/client.ts`.
+- Backend risk data flows through `backend/risk_engine.py`, `backend/snapshot.py`, and the frontend `Blocker` type in `frontend/src/api/types.ts`.
 
 # Design system guidelines
 
@@ -18,7 +18,7 @@ The app follows a token-based design system defined as CSS variables in the `:ro
 
 ## Colors
 
-- **Severity** — derive from the shared helpers in `frontend/src/utils/format.ts` (`getRiskColor(score)`, `severityFromScore(score)`):
+- **Severity** — derive from the shared helpers in `frontend/src/utils/severity.ts` (`getRiskColor(score)`, `severityFromScore(score)`):
   - CRITICAL → `#ef4444` (error red), HIGH → `#d97706`, MEDIUM → `#f59e0b`, LOW → `#10b981`.
   - Severity strings are uppercased for display; CSS class suffixes `.critical/.high/.medium/.low` style cards and badges.
 - **Primary** — blue ramp; primary actions use `--color-primary-600` (`#2563eb`).
