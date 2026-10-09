@@ -3,14 +3,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import main as app
+import services.snapshot_service as snapshot_service
 
 
 def test_serves_cached_snapshot_while_refresh_running():
-    lock = app._refresh_lock("b4-lock-test")
+    lock = snapshot_service._refresh_lock("b4-lock-test")
     lock.acquire()
     try:
-        result = app._refresh_snapshot(
+        result = snapshot_service._refresh_snapshot(
             {"slug": "b4-lock-test"},
             None,
             existing_snapshot={"cached": True},
@@ -24,14 +24,19 @@ def test_refresh_rereads_row_inside_lock(monkeypatch):
     fresh = {"slug": "b4-fresh-test", "marker": "fresh"}
     seen: dict = {}
 
-    monkeypatch.setattr(app.store, "get_profile", lambda slug: fresh)
+    class _FakeStore:
+        @staticmethod
+        def get_profile(slug):
+            return fresh
+
+    monkeypatch.setattr(snapshot_service, "store", _FakeStore())
     monkeypatch.setattr(
-        app,
+        snapshot_service,
         "_refresh_snapshot_locked",
         lambda row, config: seen.update(row=row) or {"ok": True},
     )
 
-    result = app._refresh_snapshot({"slug": "b4-fresh-test", "marker": "stale"}, None)
+    result = snapshot_service._refresh_snapshot({"slug": "b4-fresh-test", "marker": "stale"}, None)
 
     assert result == {"ok": True}
     assert seen["row"] is fresh
