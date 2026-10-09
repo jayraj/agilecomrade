@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 # snapshot refresh (Vercel's function limit is the only other backstop).
 JIRA_TIMEOUT = 20
 
+# Safety cap on search pagination (100 issues/page): 50 pages = 5000 issues,
+# far above any realistic sprint while still bounding a misbehaving paginator.
+MAX_SEARCH_PAGES = 50
+
 # Cache resolved Jira timezones per (site, account) so we don't call /myself on
 # every snapshot refresh. Keyed by base_url|email; cleared only on process
 # restart (timezone changes are rare enough to tolerate that).
@@ -184,18 +188,32 @@ class JiraFetcher:
 
     def get_sprint_issues(self, sprint_id):
         jql = f"sprint = {sprint_id} AND type in (Story, Task, Bug)"
-        try:
-            response = _get(
-                f"{self.base_url}/rest/api/3/search/jql",
-                auth=self.auth, headers=self.headers,
-                params={"jql": jql, "maxResults": 100, "expand": "changelog", "fields": "*all"},
-                timeout=60,
-            )
-            response.raise_for_status()
-            return response.json().get("issues", [])
-        except Exception as e:
-            logger.error(f"Error fetching sprint issues: {e}")
-            return []
+        issues = []
+        next_token = None
+        # The enhanced search endpoint paginates via an opaque nextPageToken and
+        # caps each page at 100 issues; without following it, sprints larger
+        # than 100 issues silently under-report story points and risks.
+        for _ in range(MAX_SEARCH_PAGES):
+            params = {"jql": jql, "maxResults": 100, "expand": "changelog", "fields": "*all"}
+            if next_token:
+                params["nextPageToken"] = next_token
+            try:
+                response = _get(
+                    f"{self.base_url}/rest/api/3/search/jql",
+                    auth=self.auth, headers=self.headers,
+                    params=params,
+                    timeout=60,
+                )
+                response.raise_for_status()
+            except Exception as e:
+                logger.error(f"Error fetching sprint issues (page {_ + 1}): {e}")
+                break
+            data = response.json()
+            issues.extend(data.get("issues", []))
+            next_token = data.get("nextPageToken")
+            if not next_token or data.get("isLast"):
+                break
+        return issues
 
     # ------------------------------------------------------------------ #
     # Aggregates
