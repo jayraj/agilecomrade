@@ -53,7 +53,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
   return (
     <div className="detail-shell">
       <SprintDetailHeader
-        sprintKey={sprintKey}
+        sprintKey={d.sprintName || sprintKey}
         projectKey={d.projectKey}
         dayLabel={d.dayLabel}
         start={d.start}

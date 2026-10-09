@@ -45,6 +45,7 @@ export interface SprintDetail {
   // identity / summary
   isFuture: boolean
   projectKey?: string
+  sprintName: string
   dayLabel: string | null
   start?: string
   end?: string
@@ -145,6 +146,9 @@ export function useSprintDetail(kind: 'active' | 'future', sprintKey: string): S
   }
 
   const projectKey = isFuture ? project?.project_key : (card as { project_key?: string } | null)?.project_key
+  // Active cards carry the sprint name in sprint_key; future projects expose the
+  // full Jira sprint name there too (falling back to the route's project key).
+  const sprintName = (card?.sprint_key as string | undefined) || sprintKey
   const start = card?.start_date
   const end = card?.end_date
   const totalSp = card?.total_sp ?? 0
@@ -270,6 +274,7 @@ export function useSprintDetail(kind: 'active' | 'future', sprintKey: string): S
     offline,
     isFuture,
     projectKey,
+    sprintName,
     dayLabel,
     start,
     end,

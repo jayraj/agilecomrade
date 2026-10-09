@@ -24,7 +24,7 @@ vi.mock('../../api', () => ({
   SHOW_AI_DEBUG: false,
   apiGenerateFollowup: vi.fn(),
   apiGenerateMitigations: vi.fn(),
-  apiNextSprintIssues: vi.fn(),
+  apiNextSprintIssues: vi.fn().mockResolvedValue({ issues: [] }),
   apiNextSprintRisks: vi.fn(),
   apiSetRiskDecision: vi.fn(),
 }))
@@ -73,5 +73,31 @@ describe('SprintDetailPanel persisted mitigation plan (B2)', () => {
     render(<SprintDetailPanel kind="active" sprintKey="Sprint 1" />)
 
     expect(screen.queryByText('AI MITIGATION PLAN')).toBeNull()
+  })
+})
+
+describe('SprintDetailPanel future sprint header (B3)', () => {
+  it('titles the panel with the full sprint name, not just the project key', () => {
+    snapshotRef.current = {
+      ...makeSnapshot([]),
+      next_sprint_overview: {
+        projects: [
+          {
+            project_key: 'PFIN',
+            sprint_key: 'PFIN Sprint 12',
+            total_sp: 42,
+            issue_count: 7,
+            issue_types: { Story: 7 },
+          },
+        ],
+        total_sp: 42,
+        issue_count: 7,
+      },
+    } as unknown as Snapshot
+
+    render(<SprintDetailPanel kind="future" sprintKey="PFIN" />)
+
+    expect(screen.getByText('PFIN Sprint 12')).toBeTruthy()
+    expect(screen.getByText('PFIN · Sprint Details')).toBeTruthy()
   })
 })
