@@ -75,7 +75,7 @@ def _conf(risk: dict) -> str:
     return str(risk.get("confidence") or 0)
 
 
-# Score-to-severity bands, mirroring frontend/src/utils/format.ts:severityFromScore.
+# Score-to-severity bands, mirroring frontend/src/utils/severity.ts:severityFromScore.
 _SEVERITY_BANDS = {"LOW": "(<20)", "MEDIUM": "(20-59)", "HIGH": "(60-79)", "CRITICAL": "(80+)"}
 
 
