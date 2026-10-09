@@ -7,6 +7,7 @@ import requests
 
 from config import UserConfig, settings
 from risk_components import is_done, is_qa_status
+from state import get_backend
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,10 +20,10 @@ JIRA_TIMEOUT = 20
 # far above any realistic sprint while still bounding a misbehaving paginator.
 MAX_SEARCH_PAGES = 50
 
-# Cache resolved Jira timezones per (site, account) so we don't call /myself on
-# every snapshot refresh. Keyed by base_url|email; cleared only on process
-# restart (timezone changes are rare enough to tolerate that).
-_TZ_CACHE: dict[str, str] = {}
+# Resolved Jira timezones are cached per (site, account) so we don't call
+# /myself on every snapshot refresh. No TTL: timezone changes are rare enough
+# that an indefinite cache is fine.
+_TZ_CACHE_NAMESPACE = "tz"
 
 
 def _get(url, **kwargs):
@@ -82,12 +83,12 @@ class JiraFetcher:
         are cached per (site, account) so we don't hit /myself on every refresh.
         """
         key = self._tz_cache_key()
-        cached = _TZ_CACHE.get(key)
+        cached = get_backend().cache_get(_TZ_CACHE_NAMESPACE, key)
         if cached is not None:
             return cached
         tz = self._fetch_timezone()
         if tz:  # only cache successes; let transient failures retry next time
-            _TZ_CACHE[key] = tz
+            get_backend().cache_set(_TZ_CACHE_NAMESPACE, key, tz, 0)
         return tz
 
     def _fetch_timezone(self) -> str | None:

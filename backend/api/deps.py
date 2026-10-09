@@ -2,8 +2,6 @@
 
 import hmac
 import logging
-import threading
-import time
 from urllib.parse import quote as urlquote
 
 from fastapi import Request
@@ -11,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from crypto import sha256_hex
 from services import store
+from state import get_backend
 from validation import validate_slug
 
 logger = logging.getLogger(__name__)
@@ -19,33 +18,12 @@ logger = logging.getLogger(__name__)
 # Content-Length guard; chunked bodies without a length are not covered.
 _MAX_BODY_BYTES = 1_000_000
 
-# Simple in-memory rate limiter (per key: list of timestamps). The key map is
-# capped and pruned so a flood of distinct keys (e.g. spoofed IPs) can't grow it
-# without bound.
-_RATE_BUCKETS: dict = {}
-_RATE_LOCK = threading.Lock()
-_RATE_MAX_KEYS = 10_000
-_RATE_MAX_WINDOW = 3600
-
-
-def _prune_rate_buckets(now: float) -> None:
-    for key in [k for k, ts in _RATE_BUCKETS.items() if not ts or now - max(ts) > _RATE_MAX_WINDOW]:
-        _RATE_BUCKETS.pop(key, None)
-
 
 def rate_limit(key: str, max_requests: int, window_seconds: int):
     """Returns None if allowed, or a JSONResponse with 429 if over the limit."""
-    now = time.monotonic()
-    with _RATE_LOCK:
-        bucket = [t for t in _RATE_BUCKETS.get(key, []) if now - t < window_seconds]
-        if len(bucket) >= max_requests:
-            _RATE_BUCKETS[key] = bucket
-            return _error("Too many requests. Please try again later.", 429)
-        bucket.append(now)
-        _RATE_BUCKETS[key] = bucket
-        if len(_RATE_BUCKETS) > _RATE_MAX_KEYS:
-            _prune_rate_buckets(now)
-    return None
+    if get_backend().check_rate(key, max_requests, window_seconds):
+        return None
+    return _error("Too many requests. Please try again later.", 429)
 
 
 def _error(message: str, status_code: int = 400) -> JSONResponse:

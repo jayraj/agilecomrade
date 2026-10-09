@@ -1,7 +1,6 @@
 """Snapshot refresh orchestration: per-profile locking, Jira fetch, persistence."""
 
 import logging
-import threading
 from datetime import timedelta
 
 from config import UserConfig, settings
@@ -11,8 +10,13 @@ from risk_components import now_utc, to_utc
 from risk_engine import RiskEngine
 from services import store
 from snapshot import build_snapshot
+from state import get_backend
 
 logger = logging.getLogger(__name__)
+
+# A refresh that overruns this is assumed crashed; its lock auto-expires so
+# later requests aren't blocked forever (only meaningful for the shared backend).
+_REFRESH_LOCK_TTL = 300  # seconds
 
 
 def _trim_issue(issue: dict) -> dict:
@@ -36,13 +40,8 @@ def _trim_sprint_data(data: dict) -> dict:
     return out
 
 
-_refresh_locks: dict = {}
-_REFRESH_LOCKS_LOCK = threading.Lock()
-
-
-def _refresh_lock(slug: str) -> threading.Lock:
-    with _REFRESH_LOCKS_LOCK:
-        return _refresh_locks.setdefault(slug, threading.Lock())
+def _refresh_lock(slug: str):
+    return get_backend().lock(f"refresh:{slug}", _REFRESH_LOCK_TTL)
 
 
 def _refresh_snapshot(row: dict, config: UserConfig, existing_snapshot=None):

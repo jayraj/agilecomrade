@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import main as app
+from state.memory import _RATE_MAX_KEYS, MemoryStateBackend
 
 
 def _request(headers: dict, client=("10.0.0.1", 12345)) -> Request:
@@ -31,8 +32,7 @@ def test_client_ip_falls_back_to_real_ip_then_peer() -> None:
 
 
 def test_rate_limit_blocks_after_max() -> None:
-    key = "security-test-rate"
-    app._RATE_BUCKETS.pop(key, None)
+    key = f"security-test-rate-{time.monotonic()}"
     assert app.rate_limit(key, 2, 60) is None
     assert app.rate_limit(key, 2, 60) is None
     blocked = app.rate_limit(key, 2, 60)
@@ -41,14 +41,14 @@ def test_rate_limit_blocks_after_max() -> None:
 
 
 def test_rate_bucket_map_is_bounded() -> None:
-    app._RATE_BUCKETS.clear()
+    backend = MemoryStateBackend()
     stale = time.monotonic() - 10_000
-    for i in range(app._RATE_MAX_KEYS + 5):
-        app._RATE_BUCKETS[f"stale-{i}"] = [stale]
+    for i in range(_RATE_MAX_KEYS + 5):
+        backend._rate_buckets[f"stale-{i}"] = (stale, 1)
 
-    app.rate_limit("fresh-key", 1, 60)
+    backend.check_rate("fresh-key", 1, 60)
 
-    assert len(app._RATE_BUCKETS) <= app._RATE_MAX_KEYS
+    assert len(backend._rate_buckets) <= _RATE_MAX_KEYS
 
 
 def test_api_responses_have_security_headers_and_no_store() -> None:

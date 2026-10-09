@@ -5,16 +5,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# Back-compat re-exports: tests (and older callers) reach rate-limit internals
-# through `main`. New code should import from `api.deps` / `services` directly.
-from api.deps import (
-    _MAX_BODY_BYTES,
-    _RATE_BUCKETS,
-    _RATE_MAX_KEYS,
-    _client_ip,
-    _error,
-    rate_limit,
-)
+# Back-compat re-exports: tests (and older callers) reach shared deps through
+# `main`. New code should import from `api.deps` / `services` directly.
+from api.deps import _MAX_BODY_BYTES, _client_ip, _error, rate_limit
 from api.routers import meta, profiles, risk, snapshot
 from config import settings
 from crypto import DecryptionError

@@ -19,15 +19,16 @@ from prompt_privacy import (
     scrub_emails,
 )
 from risk_components import has_dependency_signal
+from state import get_backend
 
 # The google-generativeai SDK keeps API-key state process-global
 # (genai.configure); serialize init + calls to avoid cross-profile key races.
+# This must stay in-process (it guards an SDK singleton, not shared state).
 _GENAI_LOCK = threading.Lock()
 
-# Cheap per-process LLM result cache (TTL). Serverless instances are ephemeral,
-# but a warm instance serves repeat clicks (e.g. re-running "Mitigate with AI")
-# from cache instead of re-hitting the (slow, quota-limited) provider.
-_LLM_CACHE: dict = {}
+# LLM result cache (TTL). Warm instances — and, with the Supabase backend, all
+# instances — serve repeat clicks (e.g. re-running "Mitigate with AI") from
+# cache instead of re-hitting the (slow, quota-limited) provider.
 _LLM_CACHE_TTL = 600  # seconds
 
 
@@ -41,15 +42,11 @@ def _llm_cache_key(prefix: str, obj) -> str:
 
 
 def _llm_cache_get(key: str):
-    item = _LLM_CACHE.get(key)
-    if item and (time.time() - item[1]) < _LLM_CACHE_TTL:
-        return item[0]
-    _LLM_CACHE.pop(key, None)
-    return None
+    return get_backend().cache_get("llm", key)
 
 
 def _llm_cache_put(key: str, value) -> None:
-    _LLM_CACHE[key] = (value, time.time())
+    get_backend().cache_set("llm", key, value, _LLM_CACHE_TTL)
 
 
 logging.basicConfig(level=logging.INFO)

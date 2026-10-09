@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     # Generate one with:
     # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     encryption_key: str = ""
+
+    # Cross-instance app state (rate limits, refresh locks, TTL caches).
+    # "memory" (default) is per-process; "supabase" shares state across
+    # serverless instances via the kv_store table. Env: SRR_STATE_BACKEND.
+    state_backend: str = Field(
+        default="memory",
+        validation_alias=AliasChoices("SRR_STATE_BACKEND", "STATE_BACKEND"),
+    )
 
     # Comma-separated allowed CORS origins (the deployed frontend URL).
     cors_origins: str = "http://localhost:3001,http://127.0.0.1:3001"
