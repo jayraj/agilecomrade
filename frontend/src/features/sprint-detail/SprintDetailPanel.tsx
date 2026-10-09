@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Layers, ShieldAlert, Sparkles } from 'lucide-react'
-import { useSnapshot } from '../hooks/useSnapshot'
-import { useSync } from '../context/SyncContext'
+import { useSnapshot } from '../../hooks/useSnapshot'
+import { useSync } from '../../context/SyncContext'
 import {
   apiGenerateFollowup,
   apiGenerateMitigations,
@@ -16,9 +16,10 @@ import {
   type NextSprintProject,
   type RiskDecision,
   type RiskDecisionStatus,
-} from '../api/client'
-import { SEVERITY_RANK, severityFromScore, sprintDayLabel, draftToPlainText } from '../utils/format'
-import SprintGauge from './SprintGauge'
+} from '../../api'
+import { sprintDayLabel, draftToPlainText } from '../../utils/format'
+import { SEVERITY_RANK, severityFromScore } from '../../utils/severity'
+import SprintGauge from '../dashboard/SprintGauge'
 import SprintDetailHeader from './SprintDetailHeader'
 import MitigationPlanCard from './MitigationPlanCard'
 import RiskCardItem from './RiskCardItem'
@@ -45,6 +46,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [draftGeneratedBy, setDraftGeneratedBy] = useState<Record<string, string>>({})
   const [draftFallbackReasons, setDraftFallbackReasons] = useState<Record<string, string>>({})
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [planRequestedFor, setPlanRequestedFor] = useState<string | null>(null)
 
   const [futureIssues, setFutureIssues] = useState<NextSprintIssue[]>([])
@@ -181,7 +183,8 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     if (!text) return
     try {
       await navigator.clipboard.writeText(draftToPlainText(text))
-      alert('Message copied to clipboard!')
+      setCopiedKey(issueKey)
+      setTimeout(() => setCopiedKey((k) => (k === issueKey ? null : k)), 2000)
     } catch (e) {
       console.error('Copy failed:', e)
     }
@@ -297,6 +300,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
                     generatedBy={blocker.issue_key ? draftGeneratedBy[blocker.issue_key] : undefined}
                     fallbackReason={blocker.issue_key ? draftFallbackReasons[blocker.issue_key] : undefined}
                     onCopy={() => blocker.issue_key && copyDraft(blocker.issue_key)}
+                    copied={!!blocker.issue_key && copiedKey === blocker.issue_key}
                     onDecide={
                       canDecide
                         ? async (status, note) => {
@@ -334,6 +338,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
         )}
 
         <button
+          type="button"
           className="detail-ai-btn"
           onClick={() => {
             setPlanRequestedFor(sprintKey)

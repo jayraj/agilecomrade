@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getRiskColor } from '../utils/format'
+import { getRiskColor } from '../../utils/severity'
 
 const GAUGE_STROKE = 9
 

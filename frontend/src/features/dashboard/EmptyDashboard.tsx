@@ -1,20 +1,9 @@
 import { Link } from 'react-router-dom'
-import { Activity, Eye, LayoutGrid, Rocket, TrendingUp } from 'lucide-react'
+import { Activity, Rocket, TrendingUp } from 'lucide-react'
 
 export default function EmptyDashboard() {
   return (
     <div className="dashboard-empty">
-      <div className="empty-state-tabs">
-        <button type="button" className="empty-state-tab">
-          <LayoutGrid size={14} />
-          With data
-        </button>
-        <button type="button" className="empty-state-tab active">
-          <Eye size={14} />
-          Empty state
-        </button>
-      </div>
-
       <div className="empty-hero">
         <div className="empty-hero-content">
           <div className="empty-hero-icon">

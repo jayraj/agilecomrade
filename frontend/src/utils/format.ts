@@ -1,7 +1,3 @@
-// Severity palette anchored to the design-system semantic tokens:
-// CRITICAL = error (#ef4444), MEDIUM = warning (#f59e0b), LOW = success (#10b981).
-// HIGH uses a deepened warning (#d97706) to keep the four tiers distinguishable.
-
 // The Jira timezone (from the user's Jira profile, carried on the snapshot) is
 // the single source of truth for calendar-day math, so every date we show
 // matches what the user sees in Jira — regardless of the viewer's machine tz.
@@ -11,62 +7,6 @@ let displayTimezone: string | null = null
 export const setJiraTimezone = (tz: string | null | undefined): void => {
   displayTimezone = tz || null
 }
-
-const RISK_BANDS = [
-  { sev: 'CRITICAL', band: '(80+)', min: 80, color: '#ef4444' },
-  { sev: 'HIGH', band: '(60-79)', min: 60, color: '#d97706' },
-  { sev: 'MEDIUM', band: '(20-59)', min: 20, color: '#f59e0b' },
-  { sev: 'LOW', band: '(<20)', min: 0, color: '#10b981' },
-] as const
-
-const bandForScore = (score: number): (typeof RISK_BANDS)[number] =>
-  RISK_BANDS.find((b) => score >= b.min) ?? RISK_BANDS[RISK_BANDS.length - 1]
-
-export const getRiskColor = (score: number | undefined | null): string => {
-  if (score === undefined || score === null) return '#a1a1aa'
-  return bandForScore(score).color
-}
-
-// Per-driver score-math chips. Reads the structured `factors` block the backend
-// attaches to each risk (band = score-band chips; drivers = the exact multipliers
-// that went into the risk's raw score). Returns [] when the block is absent so
-// callers fall back to the severity_reason text chip instead of breaking.
-export const scoreDrivers = (risk: {
-  factors?: {
-    band?: string[]
-    drivers?: { icon?: string; label?: string }[]
-  } | null
-}): { icon?: string; label: string }[] => {
-  const factors = risk?.factors
-  if (!factors) return []
-  const band = (factors.band ?? []).filter(Boolean).map((label) => ({ label }))
-  const drivers = (factors.drivers ?? []).map((c) => ({ icon: c.icon, label: c.label ?? '' }))
-  return [...band, ...drivers].filter((c) => c.label)
-}
-
-// Must mirror backend/risk_components.py:bucket_severity bands so frontend
-// display severity matches the recalibrated backend (LOW<20, MEDIUM 20-59,
-// HIGH 60-79, CRITICAL 80+).
-export const severityFromScore = (score?: number | null): string | null => {
-  if (score === undefined || score === null) return null
-  return bandForScore(score).sev
-}
-
-// Canonical RAG ordering shared by every severity sort (higher = worse).
-export const SEVERITY_RANK: Record<string, number> = {
-  LOW: 1,
-  MEDIUM: 2,
-  HIGH: 3,
-  CRITICAL: 4,
-}
-
-// Resolve a blocker's display severity. The recalibrated score band wins when a
-// score is present (it mirrors the backend's bucket_severity), then the stored
-// severity field, then a MEDIUM default — always upper-cased for badge/class use.
-export const severityOf = (b: {
-  risk_score?: number | null
-  severity?: string | null
-}): string => (severityFromScore(b.risk_score) || b.severity || 'MEDIUM').toUpperCase()
 
 export interface RiskDetectFields {
   issue_key?: string

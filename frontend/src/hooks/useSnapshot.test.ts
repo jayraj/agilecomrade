@@ -1,10 +1,13 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Snapshot } from '../api/client'
+import type { Snapshot } from '../api'
 
 const { apiSnapshotMock } = vi.hoisted(() => ({ apiSnapshotMock: vi.fn() }))
 
-vi.mock('../api/client', () => ({ apiSnapshot: apiSnapshotMock }))
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  apiSnapshot: apiSnapshotMock,
+}))
 vi.mock('../utils/offlineCache', () => ({
   loadOfflineSnapshot: vi.fn().mockResolvedValue(null),
   saveOfflineSnapshot: vi.fn(),

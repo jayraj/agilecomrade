@@ -1,16 +1,10 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Layers, Zap, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
-import { sprintDayLabel, severityOf, getRiskColor } from '../utils/format'
+import { sprintDayLabel } from '../../utils/format'
+import { severityOf, getRiskColor, SEVERITY_BADGE } from '../../utils/severity'
 import SprintGauge from './SprintGauge'
-import type { Blocker } from '../api/client'
-
-const SEVERITY_BADGE: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-  CRITICAL: { bg: 'var(--badge-critical-bg)', text: 'var(--badge-critical-text)', dot: 'var(--badge-critical-dot)', label: 'critical' },
-  HIGH: { bg: 'var(--badge-high-bg)', text: 'var(--badge-high-text)', dot: 'var(--badge-high-dot)', label: 'high' },
-  MEDIUM: { bg: 'var(--badge-medium-bg)', text: 'var(--badge-medium-text)', dot: 'var(--badge-medium-dot)', label: 'medium' },
-  LOW: { bg: 'var(--badge-low-bg)', text: 'var(--badge-low-text)', dot: 'var(--badge-low-dot)', label: 'low' },
-}
+import type { Blocker } from '../../api'
 
 export interface SprintCardData {
   sprint_key: string
@@ -141,7 +135,7 @@ export default function SprintCard({ data, blockers = [], eyebrow = 'ACTIVE SPRI
           )}
         </div>
         {onDetails ? (
-          <button className="sprint-card-details" onClick={onDetails}>
+          <button type="button" className="sprint-card-details" onClick={onDetails}>
             Details <ArrowRight size={12} className="sprint-card-details-arrow" />
           </button>
         ) : (

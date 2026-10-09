@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import {
   apiConfigDefaults,
   apiCreateProfile,
@@ -10,25 +8,46 @@ import {
   apiGetProfile,
   apiTestConfig,
   apiUpdateProfile,
-} from '../api/client'
-import { profileApi } from '../api/config'
-import { clearOfflineSnapshot } from '../utils/offlineCache'
-import {
-  EMPTY_FORM,
-  isValidatedKey,
-  validateForm,
-  type FormState,
-  type ValidatedKey,
-} from '../utils/settingsForm'
-import SavedProfileCard from './SavedProfileCard'
-import ProfileForm from './ProfileForm'
+  profileApi,
+} from '../../api'
+import { clearOfflineSnapshot } from '../../utils/offlineCache'
+import { EMPTY_FORM, isValidatedKey, validateForm, type FormState, type ValidatedKey } from './settingsForm'
 
-interface SettingsProps {
-  onProfilesChanged: () => void
-  onSelectProfile: (slug: string | null) => void
+export interface ProfileSettings {
+  form: FormState
+  currentSlug: string | null
+  mode: 'create' | 'view' | 'edit'
+  defaultModels: Record<string, string>
+  testing: boolean
+  saving: boolean
+  deleting: boolean
+  confirmDelete: boolean
+  testResult: { status: string; text: string } | null
+  message: { kind: 'ok' | 'err'; text: string } | null
+  fieldErrors: Partial<Record<ValidatedKey, string>>
+  fieldErrorList: string[]
+  isView: boolean
+  isEdit: boolean
+  isCreate: boolean
+  readOnly: boolean
+  set: (key: keyof FormState) => (value: string) => void
+  switchProvider: (provider: string) => void
+  enterEdit: () => void
+  cancelEdit: () => void
+  testConnection: () => Promise<void>
+  saveProfile: () => Promise<void>
+  startDelete: () => void
+  cancelDelete: () => void
+  confirmDeleteNow: (slug: string) => Promise<void>
 }
 
-export default function Settings({ onProfilesChanged, onSelectProfile }: SettingsProps) {
+/**
+ * All profile settings form state and API orchestration, extracted from the
+ * Settings page so the component stays presentational.
+ */
+export const useProfileSettings = (
+  onSelectProfile: (slug: string | null) => void,
+): ProfileSettings => {
   const [initialActive] = useState(() => profileApi.active())
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [accessToken, setAccessToken] = useState('')
@@ -67,8 +86,6 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
     if (initialActive) loadIntoForm(initialActive.slug, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const refreshProfiles = () => onProfilesChanged()
 
   const set = (key: keyof FormState) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }))
@@ -263,7 +280,6 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
       }
       setAccessToken('')
       setMode('view')
-      refreshProfiles()
     } catch (error) {
       setMessage({ kind: 'err', text: apiErrorMessage(error) })
     } finally {
@@ -301,7 +317,6 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
       profileApi.remove(slug)
       void clearOfflineSnapshot(slug)
       onSelectProfile(null)
-      refreshProfiles()
       setMessage({ kind: 'ok', text: `Profile '${slug}' deleted.` })
       setCurrentSlug(null)
       setForm(EMPTY_FORM)
@@ -319,74 +334,31 @@ export default function Settings({ onProfilesChanged, onSelectProfile }: Setting
     }
   }
 
-  return (
-    <div className="settings-page">
-      <Link to="/" className="settings-breadcrumb" aria-label="Navigation">
-        <ArrowLeft size={16} strokeWidth={2} />
-        Go to Dashboard
-      </Link>
-      <h2 className="settings-title">Settings</h2>
-      <p className="settings-intro">
-        Configure your Jira Cloud workspace and LLM provider. Your profile is stored encrypted in Supabase; the access
-        token is kept only in this browser and validated as a hash by the backend.
-      </p>
-
-      <p className="token-note settings-guide-link">
-        New to Agile Comrade?{' '}
-        <a href="/user-guide.html" target="_blank" rel="noreferrer">Read the User Guide →</a>
-      </p>
-
-      {isCreate && (
-        <div className="no-data">
-          <p>No profile saved in this browser yet. Create your first one below.</p>
-        </div>
-      )}
-
-      {isCreate && message?.kind === 'ok' && (
-        <div className={`form-message ${message.kind}`}>{message.text}</div>
-      )}
-
-      {currentSlug && (
-        <>
-          <h3 className="saved-profile-heading">Saved profile (this browser)</h3>
-          {message?.kind === 'ok' && (
-            <div className={`form-message ${message.kind}`}>{message.text}</div>
-          )}
-          <SavedProfileCard
-            slug={currentSlug}
-            form={form}
-            confirmDelete={confirmDelete}
-            deleting={deleting}
-            onStartDelete={startDelete}
-            onCancelDelete={cancelDelete}
-            onConfirmDelete={() => void confirmDeleteNow(currentSlug)}
-            onEdit={enterEdit}
-          />
-        </>
-      )}
-
-      {!isView && (
-        <ProfileForm
-          form={form}
-          currentSlug={currentSlug}
-          isCreate={isCreate}
-          isEdit={isEdit}
-          isView={isView}
-          readOnly={readOnly}
-          defaultModels={defaultModels}
-          fieldErrors={fieldErrors}
-          fieldErrorList={fieldErrorList}
-          message={message}
-          testing={testing}
-          saving={saving}
-          testResult={testResult}
-          onFieldChange={set}
-          onSwitchProvider={switchProvider}
-          onTestConnection={testConnection}
-          onSave={saveProfile}
-          onCancelEdit={cancelEdit}
-        />
-      )}
-    </div>
-  )
+  return {
+    form,
+    currentSlug,
+    mode,
+    defaultModels,
+    testing,
+    saving,
+    deleting,
+    confirmDelete,
+    testResult,
+    message,
+    fieldErrors,
+    fieldErrorList,
+    isView,
+    isEdit,
+    isCreate,
+    readOnly,
+    set,
+    switchProvider,
+    enterEdit,
+    cancelEdit,
+    testConnection,
+    saveProfile,
+    startDelete,
+    cancelDelete,
+    confirmDeleteNow,
+  }
 }

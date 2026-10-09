@@ -3,13 +3,12 @@ import { AlertCircle } from 'lucide-react'
 import {
   describeAiFallback,
   riskTitle,
-  severityOf,
   formatRiskType,
   draftToPlainText,
   sprintOverdueDays,
-  scoreDrivers,
-} from '../utils/format'
-import type { Blocker, RiskDecisionStatus } from '../api/client'
+} from '../../utils/format'
+import { severityOf, scoreDrivers, SEVERITY_CLASS } from '../../utils/severity'
+import type { Blocker, RiskDecisionStatus } from '../../api'
 
 interface RiskCardItemProps {
   blocker: Blocker
@@ -22,16 +21,10 @@ interface RiskCardItemProps {
   generatedBy?: string
   fallbackReason?: string
   onCopy?: () => void
+  copied?: boolean
   onDecide?: (status: RiskDecisionStatus, note: string) => Promise<void> | void
   deciding?: boolean
   offline?: boolean
-}
-
-const SEVERITY_CLASS: Record<string, string> = {
-  CRITICAL: 'critical',
-  HIGH: 'high',
-  MEDIUM: 'medium',
-  LOW: 'low',
 }
 
 // ROAM (Scaled Agile) risk dispositions: Resolved / Owned / Accepted / Mitigated.
@@ -92,6 +85,7 @@ export default function RiskCardItem({
   generatedBy,
   fallbackReason,
   onCopy,
+  copied,
   onDecide,
   deciding,
   offline,
@@ -210,7 +204,7 @@ export default function RiskCardItem({
           <div className={TRANSPARENCY_LABEL}>Suggested actions</div>
           {suggestedAction && <p className="risk-action-text">{suggestedAction}</p>}
           {showDraft && issueKey && (
-            <button className="draft-btn" disabled={drafting} onClick={onDraft}>
+            <button type="button" className="draft-btn" disabled={drafting} onClick={onDraft}>
               {drafting ? 'Drafting...' : '💬 Draft Message'}
             </button>
           )}
@@ -219,7 +213,7 @@ export default function RiskCardItem({
               <div className="draft-output-header">
                 <span>✍️ AI Follow-up Message</span>
                 <div className="draft-output-actions">
-                  <button className="copy-btn" onClick={onCopy}>📋 Copy</button>
+                  <button type="button" className="copy-btn" onClick={onCopy}>{copied ? '✅ Copied' : '📋 Copy'}</button>
                 </div>
               </div>
               <p className="draft-text">{draftToPlainText(draft)}</p>

@@ -2,8 +2,8 @@ import RiskRadar from './RiskRadar'
 import VelocityTrend from './VelocityTrend'
 import NextSprintOverview from './NextSprintOverview'
 import EmptyDashboard from './EmptyDashboard'
-import { useSnapshot } from '../hooks/useSnapshot'
-import { useSync } from '../context/SyncContext'
+import { useSnapshot } from '../../hooks/useSnapshot'
+import { useSync } from '../../context/SyncContext'
 
 interface DashboardHomeProps {
   onSelectDetail?: (selection: { kind: 'active' | 'future'; key: string }) => void

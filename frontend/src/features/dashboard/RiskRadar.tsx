@@ -1,10 +1,10 @@
 import EmptyDashboard from './EmptyDashboard'
 import { RefreshCw, TriangleAlert } from 'lucide-react'
-import { useSnapshot } from '../hooks/useSnapshot'
-import { useSync } from '../context/SyncContext'
+import { useSnapshot } from '../../hooks/useSnapshot'
+import { useSync } from '../../context/SyncContext'
 import SprintCard from './SprintCard'
-import SectionHeader from './SectionHeader'
-import type { Blocker } from '../api/client'
+import SectionHeader from '../../components/SectionHeader'
+import type { Blocker } from '../../api'
 
 interface RiskRadarProps {
   onSelectDetail?: (selection: { kind: 'active' | 'future'; key: string }) => void

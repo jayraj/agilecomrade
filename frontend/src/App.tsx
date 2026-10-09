@@ -1,24 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Link, useLocation, useParams } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { MessageSquare } from 'lucide-react'
 import TopStrip from './components/TopStrip'
-import DashboardHome from './components/DashboardHome'
-import DetailSidebar, { type DetailSelection } from './components/DetailSidebar'
-import SprintDetailPanel from './components/SprintDetailPanel'
-import Settings from './components/Settings'
-import NotFound from './components/NotFound'
-import { apiSyncNow, FEEDBACK_URL } from './api/client'
-import { profileApi } from './api/config'
+import DetailSidebar, { type DetailSelection } from './features/sprint-detail/DetailSidebar'
+import AppRoutes from './app/routes'
+import AppProviders from './app/providers'
+import { SYNC_INTERVAL_SECONDS } from './app/config'
+import { apiSyncNow, FEEDBACK_URL, profileApi } from './api'
 import { subscribeLastSync, useSnapshot } from './hooks/useSnapshot'
-import { SyncContext } from './context/SyncContext'
 import { formatLastSync } from './utils/format'
 
 export default function App() {
-  const [profiles, setProfiles] = useState(() => profileApi.list())
   const [activeProfile, setActiveProfile] = useState(() => profileApi.activeSlug())
   const [lastSync, setLastSync] = useState('Never')
   const [syncing, setSyncing] = useState(false)
-  const [syncIntervalSeconds] = useState(300)
+  const [syncMessage, setSyncMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [syncIntervalSeconds] = useState(SYNC_INTERVAL_SECONDS)
   const [refreshKey, setRefreshKey] = useState(0)
   const [detail, setDetail] = useState<DetailSelection | null>(null)
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(
@@ -40,7 +37,11 @@ export default function App() {
     return unsubscribe
   }, [])
 
-  const refreshProfiles = () => setProfiles(profileApi.list())
+  useEffect(() => {
+    if (!syncMessage) return
+    const id = setTimeout(() => setSyncMessage(null), 4000)
+    return () => clearTimeout(id)
+  }, [syncMessage])
 
   // `null` clears the active profile (used after a delete) so the home route
   // falls back to the "No profile configured yet" empty state instead of
@@ -57,10 +58,10 @@ export default function App() {
       const response = await apiSyncNow()
       setLastSync(formatLastSync(response.last_sync))
       setRefreshKey((k) => k + 1)
-      alert('Sync completed!')
+      setSyncMessage({ kind: 'ok', text: 'Sync completed!' })
     } catch (error) {
       console.error('Error syncing:', error)
-      alert('Sync failed. Check the profile configuration.')
+      setSyncMessage({ kind: 'err', text: 'Sync failed. Check the profile configuration.' })
     } finally {
       setSyncing(false)
     }
@@ -73,9 +74,14 @@ export default function App() {
         syncing={syncing}
         offline={offline}
         onSyncNow={syncNow}
-        profiles={profiles}
         activeProfile={activeProfile}
       />
+
+      {syncMessage && (
+        <div className={`form-message ${syncMessage.kind}`} role="status">
+          {syncMessage.text}
+        </div>
+      )}
 
       {!disclaimerDismissed && (
         <div className="disclaimer-banner" role="note">
@@ -87,6 +93,7 @@ export default function App() {
             <a href="/privacy.html" target="_blank" rel="noreferrer">Learn more →</a>
           </span>
           <button
+            type="button"
             className="disclaimer-dismiss"
             onClick={dismissDisclaimer}
             aria-label="Dismiss disclaimer"
@@ -96,74 +103,24 @@ export default function App() {
         </div>
       )}
 
-      <SyncContext.Provider value={{ syncIntervalSeconds, refreshKey }}>
-      <div className="app-body">
-        <main className="app-main">
-          <Routes>
-            <Route
-              path="/"
-              element={
-                !activeProfile ? (
-                  <div className="empty-profile">
-                    <div className="empty-profile-icon">
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="10" />
-                        <circle cx="12" cy="12" r="6" />
-                        <circle cx="12" cy="12" r="2" />
-                      </svg>
-                    </div>
-                    <h2 className="empty-profile-title">No profile configured yet</h2>
-                    <p className="empty-profile-text">
-                      Connect your Jira Cloud account to start tracking sprint risks
-                      across current and future sprints.
-                    </p>
-                    <Link className="ai-scan-btn empty-profile-cta" to="/settings">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M5 12h14" />
-                        <path d="M12 5v14" />
-                      </svg>
-                      Create a Profile
-                    </Link>
-                  </div>
-                ) : (
-                  <DashboardHome onSelectDetail={setDetail} />
-                )
-              }
+      <AppProviders syncIntervalSeconds={syncIntervalSeconds} refreshKey={refreshKey}>
+        <div className="app-body">
+          <main className="app-main">
+            <AppRoutes
+              hasProfile={!!activeProfile}
+              onSelectDetail={setDetail}
+              onSelectProfile={handleSelectProfile}
             />
-            <Route
-              path="/sprint/:sprintKey"
-              element={
-                <SprintDetailPanel
-                  kind="active"
-                  sprintKey={decodeURIComponent(useParams().sprintKey ?? '')}
-                />
-              }
-            />
-            <Route
-              path="/future/:projectKey"
-              element={
-                <SprintDetailPanel
-                  kind="future"
-                  sprintKey={decodeURIComponent(useParams().projectKey ?? '')}
-                />
-              }
-            />
-            <Route
-              path="/settings"
-              element={<Settings onProfilesChanged={refreshProfiles} onSelectProfile={handleSelectProfile} />}
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </main>
+          </main>
 
-        {detailOpen && (
-          <>
-            <div className="sidebar-backdrop" onClick={() => setDetail(null)} aria-hidden="true" />
-            <DetailSidebar selection={detail} onClose={() => setDetail(null)} />
-          </>
-        )}
-      </div>
-      </SyncContext.Provider>
+          {detailOpen && (
+            <>
+              <div className="sidebar-backdrop" onClick={() => setDetail(null)} aria-hidden="true" />
+              <DetailSidebar selection={detail} onClose={() => setDetail(null)} />
+            </>
+          )}
+        </div>
+      </AppProviders>
 
       <footer className="app-footer">
         {FEEDBACK_URL && (

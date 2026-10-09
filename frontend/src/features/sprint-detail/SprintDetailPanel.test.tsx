@@ -1,16 +1,16 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Snapshot } from '../api/client'
+import type { Snapshot } from '../../api'
 
 const { snapshotRef } = vi.hoisted(() => ({
   snapshotRef: { current: null as Snapshot | null },
 }))
 
-vi.mock('../context/SyncContext', () => ({
+vi.mock('../../context/SyncContext', () => ({
   useSync: () => ({ syncIntervalSeconds: 300, refreshKey: 0 }),
 }))
 
-vi.mock('../hooks/useSnapshot', () => ({
+vi.mock('../../hooks/useSnapshot', () => ({
   useSnapshot: () => ({
     snapshot: snapshotRef.current,
     loading: false,
@@ -20,7 +20,7 @@ vi.mock('../hooks/useSnapshot', () => ({
   }),
 }))
 
-vi.mock('../api/client', () => ({
+vi.mock('../../api', () => ({
   SHOW_AI_DEBUG: false,
   apiGenerateFollowup: vi.fn(),
   apiGenerateMitigations: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('../api/client', () => ({
   apiSetRiskDecision: vi.fn(),
 }))
 
-vi.mock('./SprintGauge', () => ({ default: () => null }))
+vi.mock('../dashboard/SprintGauge', () => ({ default: () => null }))
 vi.mock('./RiskCardItem', () => ({ default: () => null }))
 vi.mock('./RiskDetailMatrix', () => ({ default: () => null }))
 vi.mock('./WorkItemTable', () => ({ default: () => null }))
