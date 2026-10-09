@@ -9,7 +9,7 @@ Rules and guidelines to follow when generating code for the Agile Comrade app.
 - Keep components in `frontend/src/components/` (one component per file) and helpers in `frontend/src/utils/format.ts`.
 - Reuse existing UI components and CSS classes; don't duplicate styles or components.
 - Icons are lucide-react (`strokeWidth={2}` default) sized via the `size` prop: 16 inside buttons, 20 inline, 24 for section titles. Default color `#52525b`. Emojis are acceptable for UI labels/titles.
-- After any change, run `npm run lint && npm run build` in `frontend/`; backend changes must pass `python3 validate_rubric.py` in `backend/`.
+- After any change, run `npm run lint && npm run typecheck && npm run build` in `frontend/`; backend changes must pass `python3 -m pytest` and `python3 validate_rubric.py` in `backend/`. CI (`.github/workflows/ci.yml`) runs these same gates on every PR.
 - Backend risk data flows through `backend/risk_engine.py`, `backend/snapshot.py`, and the frontend `Blocker` type in `frontend/src/api/client.ts`.
 
 # Design system guidelines

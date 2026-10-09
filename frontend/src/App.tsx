@@ -6,6 +6,7 @@ import DashboardHome from './components/DashboardHome'
 import DetailSidebar, { type DetailSelection } from './components/DetailSidebar'
 import SprintDetailPanel from './components/SprintDetailPanel'
 import Settings from './components/Settings'
+import NotFound from './components/NotFound'
 import { apiSyncNow, FEEDBACK_URL } from './api/client'
 import { profileApi } from './api/config'
 import { subscribeLastSync, useSnapshot } from './hooks/useSnapshot'
@@ -151,6 +152,7 @@ export default function App() {
               path="/settings"
               element={<Settings onProfilesChanged={refreshProfiles} onSelectProfile={handleSelectProfile} />}
             />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
 

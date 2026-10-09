@@ -127,8 +127,8 @@ npm install
 npm run dev                      # no VITE_API_BASE needed; dev defaults to :5002
 ```
 
-Sanity checks: `python3 validate_rubric.py` in `backend/` (26/26),
-`npm run lint && npm run build` in `frontend/`.
+Sanity checks: `python3 -m pytest` and `python3 validate_rubric.py` in `backend/` (67/67),
+`npm run lint && npm run typecheck && npm run build` in `frontend/`.
 
 ## 8. Troubleshooting
 
