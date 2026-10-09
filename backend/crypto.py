@@ -23,22 +23,16 @@ def encrypt(plaintext: str) -> str:
     return _fernet().encrypt(plaintext.encode()).decode()
 
 
-def decrypt(token: str) -> str:
-    if not token:
-        return ""
-    try:
-        return _fernet().decrypt(token.encode()).decode()
-    except (InvalidToken, ValueError):
-        return ""
-
-
 class DecryptionError(RuntimeError):
     """Raised when a stored secret cannot be decrypted (e.g. the key rotated)."""
 
 
 def decrypt_strict(token: str) -> str:
-    """Like decrypt(), but raises DecryptionError on a corrupt token instead of
-    returning "" so callers can distinguish a missing secret from a broken one."""
+    """Decrypt a stored secret, raising DecryptionError on a corrupt token.
+
+    Missing secrets (empty token) return "" so callers can distinguish a
+    missing secret from a broken one; a rotated/incorrect key raises rather
+    than silently returning a blank credential."""
     if not token:
         return ""
     try:

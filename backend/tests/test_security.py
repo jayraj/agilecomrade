@@ -58,6 +58,8 @@ def test_api_responses_have_security_headers_and_no_store() -> None:
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
+    assert response.headers["permissions-policy"] == "geolocation=(), microphone=(), camera=()"
     assert response.headers["cache-control"] == "no-store"
 
 

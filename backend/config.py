@@ -164,18 +164,18 @@ class UserConfig(BaseModel):
         )
 
     @classmethod
-    def from_row(cls, row: dict, decrypt) -> "UserConfig":
+    def from_row(cls, row: dict, decryptor) -> "UserConfig":
         """Rehydrate from a stored profile row, decrypting API keys."""
         if not row:
             return cls.from_defaults()
         return cls(
             jira_cloud_url=row.get("jira_cloud_url", ""),
             jira_email=row.get("jira_email", ""),
-            jira_api_token=decrypt(row.get("jira_api_token_enc", "")),
+            jira_api_token=decryptor(row.get("jira_api_token_enc", "")),
             jira_projects=row.get("project_keys", ""),
             llm_provider=row.get("llm_provider", "gemini"),
             llm_model=row.get("llm_model", ""),
-            llm_api_key=decrypt(row.get("llm_api_key_enc", "")),
+            llm_api_key=decryptor(row.get("llm_api_key_enc", "")),
             story_points_field=row.get("story_points_field") or "",
         )
 

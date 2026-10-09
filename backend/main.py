@@ -31,12 +31,15 @@ app = FastAPI(
     openapi_url=None if _IS_PROD else "/openapi.json",
 )
 
+# Auth is header-based (X-SRR-Profile / X-SRR-Token), never cookies, so
+# credentials support is off. Methods/headers are narrowed to the exact
+# contract the frontend uses (frontend/src/api/client.ts + endpoints.ts).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-SRR-Profile", "X-SRR-Token"],
 )
 
 
@@ -50,6 +53,12 @@ async def security_middleware(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
+    # The API only ever returns JSON, so lock the document down completely.
+    response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if _IS_PROD:
+        # Only meaningful over HTTPS (Vercel terminates TLS); ignored otherwise.
+        response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
     # Authenticated payloads must not be cached by shared/intermediary caches.
     if request.url.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
