@@ -50,6 +50,30 @@ app.add_middleware(
 )
 
 
+# Reject oversized request bodies before a route buffers them. This is a cheap
+# Content-Length guard; chunked bodies without a length are not covered.
+_MAX_BODY_BYTES = 1_000_000
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > _MAX_BODY_BYTES:
+        return JSONResponse(
+            {"status": "error", "error": "Request body too large"},
+            status_code=413,
+        )
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
+    # Authenticated payloads must not be cached by shared/intermediary caches.
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     logger.error("Unhandled exception: %s", exc, exc_info=True)
@@ -77,9 +101,18 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
 JIRA_URL_RE = re.compile(r"^https://[a-z0-9][a-z0-9-]*\.atlassian\.net$")
 
-# Simple in-memory rate limiter (per key: list of timestamps)
+# Simple in-memory rate limiter (per key: list of timestamps). The key map is
+# capped and pruned so a flood of distinct keys (e.g. spoofed IPs) can't grow it
+# without bound.
 _RATE_BUCKETS: dict = {}
 _RATE_LOCK = threading.Lock()
+_RATE_MAX_KEYS = 10_000
+_RATE_MAX_WINDOW = 3600
+
+
+def _prune_rate_buckets(now: float) -> None:
+    for key in [k for k, ts in _RATE_BUCKETS.items() if not ts or now - max(ts) > _RATE_MAX_WINDOW]:
+        _RATE_BUCKETS.pop(key, None)
 
 
 def rate_limit(key: str, max_requests: int, window_seconds: int):
@@ -88,12 +121,15 @@ def rate_limit(key: str, max_requests: int, window_seconds: int):
     with _RATE_LOCK:
         bucket = [t for t in _RATE_BUCKETS.get(key, []) if now - t < window_seconds]
         if len(bucket) >= max_requests:
+            _RATE_BUCKETS[key] = bucket
             return JSONResponse(
                 {"status": "error", "error": "Too many requests. Please try again later."},
                 status_code=429,
             )
         bucket.append(now)
         _RATE_BUCKETS[key] = bucket
+        if len(_RATE_BUCKETS) > _RATE_MAX_KEYS:
+            _prune_rate_buckets(now)
     return None
 
 
@@ -116,6 +152,17 @@ def _safe_upstream_error(detail: str) -> str:
 
 
 def _client_ip(request: Request) -> str:
+    """Real client IP, honouring the proxy headers Vercel sets.
+
+    Falling back to request.client.host would bucket every user under the
+    proxy's IP, making IP-based rate limits useless in production.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real = request.headers.get("x-real-ip", "").strip()
+    if real:
+        return real
     return request.client.host if request.client else "unknown"
 
 # UserConfig field name -> profile column name (empty value => plain column,
