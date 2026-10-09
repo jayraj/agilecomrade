@@ -6,8 +6,9 @@ scores are asserted with a small tolerance (scores are rounded ints).
 """
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
+import risk_engine
 from config import settings as _settings
 from risk_components import (
     STALE_HOURS,
@@ -410,15 +411,26 @@ def run():
     }
     tz_issues = [_issue("P-1", "Done", 5, 10), _issue("P-2", "Done", 5, 10)]
 
-    r_pfin_utc = _first(eng.detect_sprint_overdue_risk(tz_pfin, tz_issues), "tz pfin utc")
-    r_mos_utc = _first(eng.detect_sprint_overdue_risk(tz_mos, tz_issues), "tz mos utc")
-    results.append(check("UTC: PFIN vs MOS end dates differ by 1 day",
-                         abs(r_pfin_utc["days_overdue"] - r_mos_utc["days_overdue"]), 1, tol=0))
+    # Freeze "now" to an early-UTC instant (before the +5:45 rollover) so the
+    # boundary assertion is deterministic regardless of what wall-clock time CI
+    # runs at. A late-UTC run would advance Kathmandu's "today" and collapse the
+    # one-day difference this check is meant to lock in.
+    _frozen_now = datetime(2026, 9, 1, 6, 0, tzinfo=timezone.utc)
+    _real_now_utc = risk_engine.now_utc
+    risk_engine.now_utc = lambda: _frozen_now
+    try:
+        r_pfin_utc = _first(eng.detect_sprint_overdue_risk(tz_pfin, tz_issues), "tz pfin utc")
+        r_mos_utc = _first(eng.detect_sprint_overdue_risk(tz_mos, tz_issues), "tz mos utc")
+        results.append(check("UTC: PFIN vs MOS end dates differ by 1 day",
+                             abs(r_pfin_utc["days_overdue"] - r_mos_utc["days_overdue"]), 1, tol=0))
 
-    r_pfin_kat = _first(eng.detect_sprint_overdue_risk(tz_pfin, tz_issues, None, "Asia/Kathmandu"),
-                        "tz pfin kathmandu")
-    r_mos_kat = _first(eng.detect_sprint_overdue_risk(tz_mos, tz_issues, None, "Asia/Kathmandu"),
-                       "tz mos kathmandu")
+        r_pfin_kat = _first(eng.detect_sprint_overdue_risk(tz_pfin, tz_issues, None, "Asia/Kathmandu"),
+                            "tz pfin kathmandu")
+        r_mos_kat = _first(eng.detect_sprint_overdue_risk(tz_mos, tz_issues, None, "Asia/Kathmandu"),
+                           "tz mos kathmandu")
+    finally:
+        risk_engine.now_utc = _real_now_utc
+
     results.append(check("Kathmandu: PFIN and MOS same days_overdue (both 24/Aug)",
                          r_pfin_kat["days_overdue"] - r_mos_kat["days_overdue"], 0, tol=0))
     results.append(check("Kathmandu shifts PFIN boundary (1 day less than UTC)",
