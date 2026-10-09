@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Zap, RefreshCw, Settings, WifiOff } from 'lucide-react'
-import { type ProfileCred } from '../api/config'
+import { type ProfileCred } from '../api'
 
 interface TopStripProps {
   lastSync: string

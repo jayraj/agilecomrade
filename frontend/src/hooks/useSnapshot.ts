@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import axios from 'axios'
-import { apiSnapshot, type Snapshot } from '../api/client'
-import { profileApi } from '../api/config'
+import { apiSnapshot, profileApi, type Snapshot } from '../api'
 import { loadOfflineSnapshot, saveOfflineSnapshot } from '../utils/offlineCache'
 import { setJiraTimezone } from '../utils/format'
 

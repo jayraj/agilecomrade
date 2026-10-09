@@ -9,7 +9,7 @@ import {
   sprintOverdueDays,
   scoreDrivers,
 } from '../../utils/format'
-import type { Blocker, RiskDecisionStatus } from '../../api/client'
+import type { Blocker, RiskDecisionStatus } from '../../api'
 
 interface RiskCardItemProps {
   blocker: Blocker

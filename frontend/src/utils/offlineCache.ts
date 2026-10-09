@@ -1,4 +1,4 @@
-import type { Snapshot } from '../api/client'
+import type { Snapshot } from '../api'
 
 const DB_NAME = 'agile-comrade-offline'
 const STORE = 'snapshots'

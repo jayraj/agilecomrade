@@ -16,7 +16,7 @@ import {
   type NextSprintProject,
   type RiskDecision,
   type RiskDecisionStatus,
-} from '../../api/client'
+} from '../../api'
 import { SEVERITY_RANK, severityFromScore, sprintDayLabel, draftToPlainText } from '../../utils/format'
 import SprintGauge from '../dashboard/SprintGauge'
 import SprintDetailHeader from './SprintDetailHeader'

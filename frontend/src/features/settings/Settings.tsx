@@ -10,8 +10,8 @@ import {
   apiGetProfile,
   apiTestConfig,
   apiUpdateProfile,
-} from '../../api/client'
-import { profileApi } from '../../api/config'
+  profileApi,
+} from '../../api'
 import { clearOfflineSnapshot } from '../../utils/offlineCache'
 import {
   EMPTY_FORM,

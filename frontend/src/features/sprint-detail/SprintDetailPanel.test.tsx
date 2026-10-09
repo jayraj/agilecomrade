@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Snapshot } from '../../api/client'
+import type { Snapshot } from '../../api'
 
 const { snapshotRef } = vi.hoisted(() => ({
   snapshotRef: { current: null as Snapshot | null },
@@ -20,7 +20,7 @@ vi.mock('../../hooks/useSnapshot', () => ({
   }),
 }))
 
-vi.mock('../../api/client', () => ({
+vi.mock('../../api', () => ({
   SHOW_AI_DEBUG: false,
   apiGenerateFollowup: vi.fn(),
   apiGenerateMitigations: vi.fn(),

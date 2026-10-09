@@ -1,5 +1,5 @@
 import { ShieldCheck } from 'lucide-react'
-import type { Mitigation } from '../../api/client'
+import type { Mitigation } from '../../api'
 import { describeAiFallback, formatRiskType, splitItems } from '../../utils/format'
 
 interface MitigationPlanCardProps {
