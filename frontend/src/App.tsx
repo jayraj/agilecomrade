@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Link, useLocation, useParams } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { MessageSquare } from 'lucide-react'
 import TopStrip from './components/TopStrip'
-import DashboardHome from './features/dashboard/DashboardHome'
 import DetailSidebar, { type DetailSelection } from './features/sprint-detail/DetailSidebar'
-import SprintDetailPanel from './features/sprint-detail/SprintDetailPanel'
-import Settings from './features/settings/Settings'
-import NotFound from './components/NotFound'
+import AppRoutes from './app/routes'
+import AppProviders from './app/providers'
 import { apiSyncNow, FEEDBACK_URL, profileApi } from './api'
 import { subscribeLastSync, useSnapshot } from './hooks/useSnapshot'
-import { SyncContext } from './context/SyncContext'
 import { formatLastSync } from './utils/format'
 
 export default function App() {
@@ -95,74 +92,25 @@ export default function App() {
         </div>
       )}
 
-      <SyncContext.Provider value={{ syncIntervalSeconds, refreshKey }}>
-      <div className="app-body">
-        <main className="app-main">
-          <Routes>
-            <Route
-              path="/"
-              element={
-                !activeProfile ? (
-                  <div className="empty-profile">
-                    <div className="empty-profile-icon">
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="10" />
-                        <circle cx="12" cy="12" r="6" />
-                        <circle cx="12" cy="12" r="2" />
-                      </svg>
-                    </div>
-                    <h2 className="empty-profile-title">No profile configured yet</h2>
-                    <p className="empty-profile-text">
-                      Connect your Jira Cloud account to start tracking sprint risks
-                      across current and future sprints.
-                    </p>
-                    <Link className="ai-scan-btn empty-profile-cta" to="/settings">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M5 12h14" />
-                        <path d="M12 5v14" />
-                      </svg>
-                      Create a Profile
-                    </Link>
-                  </div>
-                ) : (
-                  <DashboardHome onSelectDetail={setDetail} />
-                )
-              }
+      <AppProviders syncIntervalSeconds={syncIntervalSeconds} refreshKey={refreshKey}>
+        <div className="app-body">
+          <main className="app-main">
+            <AppRoutes
+              hasProfile={!!activeProfile}
+              onSelectDetail={setDetail}
+              onProfilesChanged={refreshProfiles}
+              onSelectProfile={handleSelectProfile}
             />
-            <Route
-              path="/sprint/:sprintKey"
-              element={
-                <SprintDetailPanel
-                  kind="active"
-                  sprintKey={decodeURIComponent(useParams().sprintKey ?? '')}
-                />
-              }
-            />
-            <Route
-              path="/future/:projectKey"
-              element={
-                <SprintDetailPanel
-                  kind="future"
-                  sprintKey={decodeURIComponent(useParams().projectKey ?? '')}
-                />
-              }
-            />
-            <Route
-              path="/settings"
-              element={<Settings onProfilesChanged={refreshProfiles} onSelectProfile={handleSelectProfile} />}
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </main>
+          </main>
 
-        {detailOpen && (
-          <>
-            <div className="sidebar-backdrop" onClick={() => setDetail(null)} aria-hidden="true" />
-            <DetailSidebar selection={detail} onClose={() => setDetail(null)} />
-          </>
-        )}
-      </div>
-      </SyncContext.Provider>
+          {detailOpen && (
+            <>
+              <div className="sidebar-backdrop" onClick={() => setDetail(null)} aria-hidden="true" />
+              <DetailSidebar selection={detail} onClose={() => setDetail(null)} />
+            </>
+          )}
+        </div>
+      </AppProviders>
 
       <footer className="app-footer">
         {FEEDBACK_URL && (
