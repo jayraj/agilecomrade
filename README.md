@@ -3,10 +3,10 @@
 React (TypeScript) frontend + FastAPI backend. Each scrum master configures their
 own Jira Cloud workspace and LLM provider in a Settings screen; the backend stores
 profiles encrypted in **Supabase** and serves the whole dashboard from a single
-**cached snapshot**. Scoring uses a transparent **risk scoring model**
-(`severity × time-pressure × blast-radius`).
+**cached snapshot**. Scoring uses a transparent **5×5 Probability × Impact risk
+matrix** (`backend/risk_matrix.py`).
 
-> 📘 End-user documentation: [docs/USER_MANUAL.html](docs/USER_MANUAL.html)
+> 📘 End-user documentation: [User Guide](frontend/public/user-guide.html) · [Privacy Policy](frontend/public/privacy.html)
 
 ## Architecture
 
@@ -20,10 +20,10 @@ agilecomrade/
 │   ├── api/index.py          # Serverless shim -> main.app
 │   ├── main.py               # FastAPI app
 │   ├── config.py             # Settings (env) + UserConfig (per-profile)
-│   ├── crypto.py             # AES-GCM (Fernet) at rest + SHA-256 token hash
+│   ├── crypto.py             # Fernet (AES-128-CBC + HMAC-SHA256) at rest + SHA-256 token hash
 │   ├── supabase_store.py     # PostgREST CRUD for `profiles` (service-role only)
 │   ├── jira_fetcher.py       # Per-profile Jira fetch + story-points auto-detect + test_connection
-│   ├── risk_components.py    # Shared scoring factors (time pressure, stage, size, …)
+│   ├── risk_components.py    # Severity buckets + shared scoring helpers
 │   ├── risk_engine.py        # Risk detectors + raw/capped scores + next-sprint
 │   ├── mitigation_agent.py   # Per-profile LLM (Gemini | OpenRouter) + fallback
 │   ├── snapshot.py           # Builds the single /api/snapshot payload
@@ -33,7 +33,7 @@ agilecomrade/
         ├── api/config.ts     # localStorage profile slug+token store
         ├── api/client.ts     # Axios client (X-SRR auth headers) + typed endpoints
         ├── hooks/useSnapshot.ts
-        ├── utils/format.ts   # Severity colors (70/35), risk labels, dates
+        ├── utils/format.ts   # Severity colors (80/60/20), risk labels, dates
         └── components/       # RiskRadar, NextSprintOverview, ExecutiveDashboard, SprintOverview, Settings, TopStrip
 ```
 
@@ -41,7 +41,8 @@ agilecomrade/
 
 - **Profiles** = one row per scrum master in Supabase (`profiles` table):
   Jira URL/email/API token, project keys, LLM provider/model/key (encrypted at
-  rest with AES-GCM via `cryptography`), optional story-points field override,
+  rest with Fernet (AES-128-CBC + HMAC-SHA256) via `cryptography`), optional
+  story-points field override,
   cached `snapshot jsonb`, `burndown_history jsonb`, `fetched_at`.
 - **No login (MVP)**. Each profile has a slug + access token. The token is
   generated in the browser, saved in `localStorage` (`srr2_profiles`), and the
@@ -100,37 +101,29 @@ it without saving. The generated access token is stored in your browser only.
 
 ## Risk scoring model
 
-Every risk starts from a base severity, then scales with schedule pressure and the
-number of teams/items it can affect:
+Scoring is a transparent **5×5 Probability × Impact matrix** (`backend/risk_matrix.py`).
+Each detector infers a probability `P` (1–5, how likely the risk is to crystallise)
+and an impact `I` (1–5, how bad it is if it does), then:
 
-`score = base_severity × time_pressure_multiplier × blast_radius_weight`
+`matrix_value = P × I` (1–25) → `risk_score = project_matrix(matrix_value)` (0–100)
 
-The UI caps the result at 100 (`risk_score`); the uncapped value is also kept for
-ranking. Final buckets (frontend colors use the same thresholds):
+The projection is band-aligned, so the rounded `risk_score` shown in the UI always
+lands in the matching severity band; the continuous `raw_score` is kept for ranking.
 
-**LOW < 35 · MEDIUM 35–69 · HIGH ≥ 70**
+**LOW 0–19 · MEDIUM 20–59 · HIGH 60–79 · CRITICAL 80+**
 
-### Inputs
-
-**Time pressure** — driven by the share of sprint time already elapsed:
-
-| Time elapsed | Multiplier |
-|--------------|-----------|
-| 0–25%        | 0.6       |
-| 25–50%        | 0.8       |
-| 50–75%        | 1.1       |
-| 75–90%        | 1.4       |
-| 90–100%      | 1.7       |
-
-**Workflow stage weight**: To Do 0.6 · In Progress 0.9 · Code Review 1.1 · QA/In QA
-Review 1.3 · Blocked 1.4.
-
-**Issue size**: `0.7 + (sp / avg_sprint_sp) × 0.3`, clamped to 0.4–1.6.
+`P` and `I` are inferred from Jira telemetry via explicit, auditable threshold
+ladders — see `backend/risk_matrix.py` and the in-app
+[User Guide](frontend/public/user-guide.html#scoring).
 
 ### Risk types
 
-- **Sprint-level** (radar cards): BURNDOWN_BEHIND, QA_BOTTLENECK, DUE_DATE_PASSED
-- **Ticket-level** (blockers panel): STORY_NOT_PROGRESSING, EXTERNAL_DEPENDENCY
+- **Sprint-level** (radar cards): BURNDOWN_BEHIND, QA_BOTTLENECK, DUE_DATE_PASSED,
+  SCOPE_CREEP, SPRINT_ENDED_INCOMPLETE
+- **Ticket-level** (blockers panel): STORY_NOT_PROGRESSING, EXTERNAL_DEPENDENCY,
+  BUG_RAISED, OVERLOADED
+- **Next-sprint signals** (count-based, not matrix-scored): UNASSIGNED, UNESTIMATED,
+  UNDEFINED_SCOPE, SIZING_RISK
 
 ## API endpoints
 

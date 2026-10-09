@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Layers, Zap, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
-import { sprintDayLabel, severityFromScore, getRiskColor } from '../utils/format'
+import { sprintDayLabel, severityOf, getRiskColor } from '../utils/format'
 import SprintGauge from './SprintGauge'
 import type { Blocker } from '../api/client'
 
@@ -50,12 +50,11 @@ export default function SprintCard({ data, blockers = [], eyebrow = 'ACTIVE SPRI
   // two indicators can never contradict (e.g. a 70% risk gauge beside a green bar).
   const fillColor = isAtRisk ? getRiskColor(score) : null
 
-  const sevOf = (b: Blocker) => severityFromScore(b.risk_score) || b.severity || 'MEDIUM'
   const counts = {
-    CRITICAL: blockers.filter((b) => sevOf(b) === 'CRITICAL').length,
-    HIGH: blockers.filter((b) => sevOf(b) === 'HIGH').length,
-    MEDIUM: blockers.filter((b) => sevOf(b) === 'MEDIUM').length,
-    LOW: blockers.filter((b) => sevOf(b) === 'LOW').length,
+    CRITICAL: blockers.filter((b) => severityOf(b) === 'CRITICAL').length,
+    HIGH: blockers.filter((b) => severityOf(b) === 'HIGH').length,
+    MEDIUM: blockers.filter((b) => severityOf(b) === 'MEDIUM').length,
+    LOW: blockers.filter((b) => severityOf(b) === 'LOW').length,
   }
   const totalRisks = counts.CRITICAL + counts.HIGH + counts.MEDIUM + counts.LOW
   const riskCount = isAtRisk ? atRiskCount : totalRisks

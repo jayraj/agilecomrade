@@ -16,17 +16,12 @@ import { Line } from 'react-chartjs-2'
 import { useSnapshot } from '../hooks/useSnapshot'
 import { useSync } from '../context/SyncContext'
 import SectionHeader from './SectionHeader'
-import type { VelocityData, VelocitySprint } from '../api/client'
+import type { VelocitySprint } from '../api/client'
 import { shortSprintName } from '../utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip)
 
-interface VelocityTrendProps {
-  /** Pass snapshot velocity directly to skip reading it from the shared poll again. */
-  velocity?: VelocityData
-}
-
-export default function VelocityTrend({ velocity }: VelocityTrendProps) {
+export default function VelocityTrend() {
   const { syncIntervalSeconds, refreshKey } = useSync()
   const { snapshot, loading, noProfile } = useSnapshot(syncIntervalSeconds, refreshKey)
 
@@ -53,7 +48,7 @@ export default function VelocityTrend({ velocity }: VelocityTrendProps) {
     return <EmptyDashboard />
   }
 
-  const data = velocity ?? snapshot?.velocity ?? {}
+  const data = snapshot?.velocity ?? {}
 
   const averageVelocity = (sprints: VelocitySprint[]) => {
     if (!sprints || sprints.length === 0) return 0

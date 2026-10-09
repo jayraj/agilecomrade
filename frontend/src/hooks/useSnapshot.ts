@@ -195,16 +195,3 @@ export function useSnapshot(syncIntervalSeconds: number, refreshKey = 0): Snapsh
 
   return useSyncExternalStore(subscribe, getSnapshot)
 }
-
-// Read-only subscription: mirrors the store without starting/resetting polling.
-// Used by debug-only UI that only needs the latest snapshot value.
-export function useSnapshotValue(): Snapshot | null {
-  const subscribe = useCallback((callback: () => void) => {
-    listeners.add(callback)
-    return () => {
-      listeners.delete(callback)
-    }
-  }, [])
-  const getSnapshot = useCallback(() => current.snapshot, [])
-  return useSyncExternalStore(subscribe, getSnapshot)
-}

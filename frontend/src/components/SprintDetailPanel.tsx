@@ -1,14 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  Calendar,
-  Clock,
-  ChevronRight,
-  Layers,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  X,
-} from 'lucide-react'
+import { Layers, ShieldAlert, Sparkles } from 'lucide-react'
 import { useSnapshot } from '../hooks/useSnapshot'
 import { useSync } from '../context/SyncContext'
 import {
@@ -26,15 +17,10 @@ import {
   type RiskDecision,
   type RiskDecisionStatus,
 } from '../api/client'
-import {
-  describeAiFallback,
-  formatDate,
-  formatRiskType,
-  severityFromScore,
-  splitItems,
-  sprintDayLabel,
-} from '../utils/format'
+import { SEVERITY_RANK, severityFromScore, sprintDayLabel } from '../utils/format'
 import SprintGauge from './SprintGauge'
+import SprintDetailHeader from './SprintDetailHeader'
+import MitigationPlanCard from './MitigationPlanCard'
 import RiskCardItem from './RiskCardItem'
 import RiskDetailMatrix from './RiskDetailMatrix'
 import WorkItemTable from './WorkItemTable'
@@ -82,7 +68,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
     ? project
     : snapshot?.radar_data.find((r) => r.sprint_key === sprintKey) ?? null
 
-  const sevRank: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 }
+  const sevRank = SEVERITY_RANK
   const sortBlockersBySeverity = (list: Blocker[]): Blocker[] =>
     [...list].sort((a, b) => {
       const sa = sevRank[(a.severity ?? severityFromScore(a.risk_score)) ?? ''] ?? 0
@@ -264,33 +250,14 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
 
   return (
     <div className="detail-shell">
-      <header className="detail-shell-head">
-        <div className="detail-shell-head-left">
-          <div className="detail-shell-eyebrow-row">
-            <span className="detail-shell-eyebrow">
-              {projectKey ? `${projectKey} · ` : ''}Sprint Details
-            </span>
-            {dayLabel && <span className="detail-shell-day">{dayLabel}</span>}
-          </div>
-          <h1 className="detail-shell-title">{sprintKey}</h1>
-          <div className="detail-shell-dates">
-            {start && (
-              <span className="detail-shell-date">
-                <Calendar size={11} /> {formatDate(start)}
-              </span>
-            )}
-            {start && end && <ChevronRight size={10} className="detail-shell-date-sep" />}
-            {end && (
-              <span className="detail-shell-date">
-                <Clock size={11} /> {formatDate(end)}
-              </span>
-            )}
-          </div>
-        </div>
-        <button className="detail-shell-close" onClick={onClose} aria-label="Close details">
-          <X size={15} />
-        </button>
-      </header>
+      <SprintDetailHeader
+        sprintKey={sprintKey}
+        projectKey={projectKey}
+        dayLabel={dayLabel}
+        start={start}
+        end={end}
+        onClose={onClose}
+      />
 
       <div className="detail-shell-body">
         <div className="detail-stats">
@@ -329,7 +296,6 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
                     endDate={end}
                     hideSignal={isFuture}
                     showDraft={!isFuture && !!blocker.issue_key && !offline}
-                    showRegister={!isFuture && !offline}
                     drafting={draftingKey === blocker.issue_key}
                     onDraft={() => draftMessage(blocker)}
                     draft={blocker.issue_key ? drafts[blocker.issue_key] : undefined}
@@ -387,93 +353,7 @@ export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDe
         </button>
 
         {planVisible && sprintMitigation && (
-          <div className="mitigation-card">
-            {sprintMitigation.ai_used === false && (
-              <div className="ai-fallback-note">{describeAiFallback(sprintMitigation.fallback_reason)}</div>
-            )}
-            <h4 className="mitigation-title">
-              <ShieldCheck size={20} className="title-icon" />AI MITIGATION PLAN
-            </h4>
-
-            {(sprintMitigation.risk_types ?? []).length > 0 && (
-              <div className="risk-chips">
-                {sprintMitigation.risk_types?.map((type) => (
-                  <span key={type} className="risk-chip">
-                    {formatRiskType(type)}
-                    {type === 'BURNDOWN_BEHIND' &&
-                      sprintMitigation.burndown_gap_percent !== undefined &&
-                      sprintMitigation.burndown_gap_percent !== null && (
-                        <> — {sprintMitigation.burndown_gap_percent}%</>
-                      )}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {sprintMitigation.action_items && sprintMitigation.action_items.length > 0 && (
-              <div className="plan-section">
-                <div className="plan-section-title">ACTION ITEMS</div>
-                <ol className="plan-list">
-                  {sprintMitigation.action_items.map((action, idx) => (
-                    <li key={idx}>{action}</li>
-                  ))}
-                </ol>
-              </div>
-            )}
-
-            {sprintMitigation.owner && (
-              <div className="plan-section">
-                <div className="plan-section-title">OWNER</div>
-                <ul className="plan-list">
-                  {splitItems(sprintMitigation.owner).map((item, idx) => (
-                    <li key={`o${idx}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {sprintMitigation.timeline && (
-              <div className="plan-section">
-                <div className="plan-section-title">TIMELINE</div>
-                <ul className="plan-list">
-                  {splitItems(sprintMitigation.timeline).map((item, idx) => (
-                    <li key={`t${idx}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {sprintMitigation.success_criteria && sprintMitigation.success_criteria.length > 0 && (
-              <div className="plan-section">
-                <div className="plan-section-title">SUCCESS CRITERIA</div>
-                <ul className="plan-list">
-                  {sprintMitigation.success_criteria.map((c, idx) => (
-                    <li key={idx}>{c}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {SHOW_AI_DEBUG && (
-              <details className="prompt-details">
-                <summary>🔍 View AI Prompt &amp; Raw Response</summary>
-                {sprintMitigation.llm && (
-                  <div className="ai-info-line">
-                    <span>🤖 LLM: {sprintMitigation.llm.provider} · {sprintMitigation.llm.model}</span>
-                    <span className={`ai-used ${sprintMitigation.ai_used ? 'yes' : 'no'}`}>
-                      {sprintMitigation.ai_used ? 'AI used' : 'Rule-based fallback'}
-                    </span>
-                  </div>
-                )}
-                <div className="prompt-block">
-                  <div className="prompt-label">Prompt sent to model:</div>
-                  <pre>{sprintMitigation.prompt}</pre>
-                  <div className="prompt-label">Model response:</div>
-                  <pre>{sprintMitigation.raw_response || '⚠️ AI unavailable — used fallback (see error).'}</pre>
-                </div>
-              </details>
-            )}
-          </div>
+          <MitigationPlanCard mitigation={sprintMitigation} showDebug={SHOW_AI_DEBUG} />
         )}
 
         {workItems.length > 0 && (

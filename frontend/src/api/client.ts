@@ -25,6 +25,10 @@ export const apiErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : 'Request failed'
 }
 
+/** HTTP status of an axios error, or undefined for non-HTTP failures. */
+export const apiErrorStatus = (error: unknown): number | undefined =>
+  axios.isAxiosError(error) ? error.response?.status : undefined
+
 export const api = axios.create({
   baseURL: API_BASE,
   timeout: 90000,
@@ -39,12 +43,6 @@ api.interceptors.request.use((config) => {
   }
   return config
 })
-
-export interface HealthInfo {
-  status: string
-  storage: string
-  timestamp: string
-}
 
 export interface RiskDetail {
   key: string
