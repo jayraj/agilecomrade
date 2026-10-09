@@ -3,12 +3,11 @@ import { AlertCircle } from 'lucide-react'
 import {
   describeAiFallback,
   riskTitle,
-  severityOf,
   formatRiskType,
   draftToPlainText,
   sprintOverdueDays,
-  scoreDrivers,
 } from '../../utils/format'
+import { severityOf, scoreDrivers, SEVERITY_CLASS } from '../../utils/severity'
 import type { Blocker, RiskDecisionStatus } from '../../api'
 
 interface RiskCardItemProps {
@@ -25,13 +24,6 @@ interface RiskCardItemProps {
   onDecide?: (status: RiskDecisionStatus, note: string) => Promise<void> | void
   deciding?: boolean
   offline?: boolean
-}
-
-const SEVERITY_CLASS: Record<string, string> = {
-  CRITICAL: 'critical',
-  HIGH: 'high',
-  MEDIUM: 'medium',
-  LOW: 'low',
 }
 
 // ROAM (Scaled Agile) risk dispositions: Resolved / Owned / Accepted / Mitigated.

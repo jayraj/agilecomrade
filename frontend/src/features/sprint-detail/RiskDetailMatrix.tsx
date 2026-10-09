@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { ChevronRight, Grid3x3 } from 'lucide-react'
+import { matrixBand } from '../../utils/severity'
 
 const PROBABILITY = [
   { label: 'Rare', score: 1 },
@@ -16,20 +17,6 @@ const IMPACT = [
   { label: 'Major', score: 4 },
   { label: 'Critical', score: 5 },
 ]
-
-// Severity bands over the 1..25 product — must mirror
-// backend/risk_matrix.py:MATRIX_BANDS, the source of truth for scoring.
-const SCALE = [
-  { max: 4, band: 'LOW' },
-  { max: 9, band: 'MEDIUM' },
-  { max: 14, band: 'HIGH' },
-  { max: 25, band: 'CRITICAL' },
-]
-
-const bandFor = (value: number): string => {
-  const hit = SCALE.find((s) => value <= s.max)
-  return (hit ?? SCALE[SCALE.length - 1]).band
-}
 
 const oddsFor = (score: number): number => score * 20
 
@@ -85,7 +72,7 @@ export default function RiskDetailMatrix() {
                   </div>
                   {IMPACT.map((impact) => {
                     const value = prob.score * impact.score
-                    const band = bandFor(value)
+                    const band = matrixBand(value)
                     return (
                       <div
                         key={`${prob.score}-${impact.score}`}

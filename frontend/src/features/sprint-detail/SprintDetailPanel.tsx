@@ -17,7 +17,8 @@ import {
   type RiskDecision,
   type RiskDecisionStatus,
 } from '../../api'
-import { SEVERITY_RANK, severityFromScore, sprintDayLabel, draftToPlainText } from '../../utils/format'
+import { sprintDayLabel, draftToPlainText } from '../../utils/format'
+import { SEVERITY_RANK, severityFromScore } from '../../utils/severity'
 import SprintGauge from '../dashboard/SprintGauge'
 import SprintDetailHeader from './SprintDetailHeader'
 import MitigationPlanCard from './MitigationPlanCard'
