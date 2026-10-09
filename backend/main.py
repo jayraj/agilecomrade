@@ -1,7 +1,6 @@
 import hmac
 import logging
 import os
-import re
 import secrets
 import threading
 import time
@@ -12,6 +11,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.deps import (
+    _MAX_BODY_BYTES,
+    _RATE_BUCKETS,
+    _RATE_MAX_KEYS,
+    _auth,
+    _client_ip,
+    _error,
+    rate_limit,
+    store,
+)
 from config import UserConfig, settings
 from crypto import DecryptionError, decrypt_strict, encrypt, sha256_hex
 from jira_fetcher import JiraFetcher, fetch_all
@@ -20,7 +29,8 @@ from risk_components import now_utc, to_utc
 from risk_engine import RiskEngine
 from risk_explainer import DECISION_STATUSES, explain_risk
 from snapshot import build_snapshot
-from supabase_store import DuplicateProfileError, SupabaseStore
+from supabase_store import DuplicateProfileError
+from validation import safe_upstream_error, validate_slug
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,11 +58,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# Reject oversized request bodies before a route buffers them. This is a cheap
-# Content-Length guard; chunked bodies without a length are not covered.
-_MAX_BODY_BYTES = 1_000_000
 
 
 @app.middleware("http")
@@ -86,79 +91,6 @@ async def decryption_error_handler(_request: Request, _exc: DecryptionError) -> 
     )
 
 
-store = SupabaseStore()
-
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
-
-JIRA_URL_RE = re.compile(r"^https://[a-z0-9][a-z0-9-]*\.atlassian\.net$")
-
-# Simple in-memory rate limiter (per key: list of timestamps). The key map is
-# capped and pruned so a flood of distinct keys (e.g. spoofed IPs) can't grow it
-# without bound.
-_RATE_BUCKETS: dict = {}
-_RATE_LOCK = threading.Lock()
-_RATE_MAX_KEYS = 10_000
-_RATE_MAX_WINDOW = 3600
-
-
-def _prune_rate_buckets(now: float) -> None:
-    for key in [k for k, ts in _RATE_BUCKETS.items() if not ts or now - max(ts) > _RATE_MAX_WINDOW]:
-        _RATE_BUCKETS.pop(key, None)
-
-
-def rate_limit(key: str, max_requests: int, window_seconds: int):
-    """Returns None if allowed, or a JSONResponse with 429 if over the limit."""
-    now = time.monotonic()
-    with _RATE_LOCK:
-        bucket = [t for t in _RATE_BUCKETS.get(key, []) if now - t < window_seconds]
-        if len(bucket) >= max_requests:
-            _RATE_BUCKETS[key] = bucket
-            return _error("Too many requests. Please try again later.", 429)
-        bucket.append(now)
-        _RATE_BUCKETS[key] = bucket
-        if len(_RATE_BUCKETS) > _RATE_MAX_KEYS:
-            _prune_rate_buckets(now)
-    return None
-
-
-def validate_jira_url(url: str) -> bool:
-    """Only https://<site>.atlassian.net URLs are accepted (blocks SSRF to internal hosts)."""
-    u = (url or "").strip().rstrip("/").lower()
-    return bool(JIRA_URL_RE.match(u))
-
-
-def _safe_upstream_error(detail: str) -> str:
-    """Map upstream error fragments to safe client-facing messages."""
-    d = (detail or "").lower()
-    if "401" in d or "unauthorized" in d or "403" in d or "forbidden" in d:
-        return "Authentication failed — check email / API token"
-    if "404" in d or "not found" in d:
-        return "Resource not found — check the URL and project keys"
-    if "timed out" in d or "timeout" in d:
-        return "Connection timed out"
-    return "Request failed — verify the configuration"
-
-
-def _client_ip(request: Request) -> str:
-    """Real client IP, honouring the proxy headers Vercel sets.
-
-    Falling back to request.client.host would bucket every user under the
-    proxy's IP, making IP-based rate limits useless in production.
-    """
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real = request.headers.get("x-real-ip", "").strip()
-    if real:
-        return real
-    return request.client.host if request.client else "unknown"
-
-
-def _error(message: str, status_code: int = 400) -> JSONResponse:
-    """Uniform error envelope: {"status": "error", "error": message}."""
-    return JSONResponse({"status": "error", "error": message}, status_code=status_code)
-
-
 # UserConfig field name -> profile column name (empty value => plain column,
 # "_enc" suffix columns are written encrypted).
 CONFIG_FIELD_MAP = {
@@ -176,28 +108,6 @@ CONFIG_FIELD_MAP = {
 # ------------------------------------------------------------------ #
 # Helpers
 # ------------------------------------------------------------------ #
-def _auth(request: Request):
-    """Resolve the profile from X-SRR-Profile + X-SRR-Token headers.
-
-    Returns (profile_row, None) on success or (None, JSONResponse) on failure.
-    Always responds 401 on failure so invalid slugs cannot be enumerated.
-    """
-    slug = (request.headers.get("X-SRR-Profile") or "").strip()
-    token = (request.headers.get("X-SRR-Token") or "").strip()
-    if not slug or not token or len(token) < 16 or not _validate_slug(slug):
-        return None, _error("Invalid credentials", 401)
-    try:
-        row = store.get_profile(urlquote(slug, safe=""))
-    except Exception as e:
-        logger.error(f"Supabase lookup failed for {slug}: {e}")
-        return None, _error("Storage unavailable", 503)
-
-    if not row or not hmac.compare_digest(row.get("access_token_hash", ""), sha256_hex(token)):
-        return None, _error("Invalid credentials", 401)
-
-    return row, None
-
-
 def _config_from_body(body: dict) -> UserConfig:
     body = body or {}
     return UserConfig(
@@ -210,10 +120,6 @@ def _config_from_body(body: dict) -> UserConfig:
         llm_api_key=(body.get("llm_api_key") or "").strip(),
         story_points_field=(body.get("story_points_field") or "").strip(),
     )
-
-
-def _validate_slug(slug: str) -> bool:
-    return bool(SLUG_RE.match(slug or ""))
 
 
 def _sanitized_config(row: dict, config: UserConfig) -> dict:
@@ -485,7 +391,7 @@ def create_profile(request: Request, body: dict):
     slug = (body.get("slug") or "").strip().lower()
     access_token = (body.get("access_token") or "").strip() or secrets.token_urlsafe(32)
 
-    if not _validate_slug(slug):
+    if not validate_slug(slug):
         return _error("Slug must be 2-40 chars: lowercase letters, digits, hyphens", 400)
 
     config = _config_from_body(body)
@@ -667,7 +573,7 @@ def test_config(request: Request, body: dict):
     # Scrub upstream response fragments before returning them to the client.
     for section in (result.get("auth"), *result.get("projects", {}).values()):
         if isinstance(section, dict) and not section.get("ok") and section.get("error"):
-            section["error"] = _safe_upstream_error(section["error"])
+            section["error"] = safe_upstream_error(section["error"])
 
     llm_check = {"provider": config.llm_provider, "model": config.llm_model, "ok": False}
     if not config.llm_api_key:
