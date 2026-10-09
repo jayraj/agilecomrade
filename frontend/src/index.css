@@ -2434,6 +2434,37 @@ body {
   gap: 6px;
 }
 
+/* ---------- risk register hand-off ---------- */
+.register-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  background: var(--color-secondary-100);
+  color: var(--color-secondary-700);
+  border: 1px solid var(--color-secondary-300);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.register-btn:hover:not(:disabled) {
+  background: var(--color-secondary-200);
+}
+
+.register-btn:focus-visible {
+  outline: 2px solid var(--color-primary-300);
+  outline-offset: 2px;
+}
+
+/* Shares the horizontal decision-action row, so drop the stacked-layout offset. */
+.risk-decision-actions .register-btn {
+  margin-top: 0;
+}
+
 .risk-decision-btn {
   background: var(--color-secondary-100);
   color: var(--color-secondary-700);
