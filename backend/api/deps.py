@@ -10,7 +10,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from crypto import sha256_hex
-from supabase_store import SupabaseStore
+from services import store
 from validation import validate_slug
 
 logger = logging.getLogger(__name__)
@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 # Reject oversized request bodies before a route buffers them. This is a cheap
 # Content-Length guard; chunked bodies without a length are not covered.
 _MAX_BODY_BYTES = 1_000_000
-
-store = SupabaseStore()
 
 # Simple in-memory rate limiter (per key: list of timestamps). The key map is
 # capped and pruned so a flood of distinct keys (e.g. spoofed IPs) can't grow it
