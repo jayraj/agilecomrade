@@ -5,7 +5,7 @@ import {
   riskTitle,
   severityOf,
   formatRiskType,
-  sanitizeInlineHtml,
+  draftToPlainText,
   sprintOverdueDays,
   scoreDrivers,
 } from '../utils/format'
@@ -222,7 +222,7 @@ export default function RiskCardItem({
                   <button className="copy-btn" onClick={onCopy}>📋 Copy</button>
                 </div>
               </div>
-              <p className="draft-text" dangerouslySetInnerHTML={{ __html: sanitizeInlineHtml(draft) }} />
+              <p className="draft-text">{draftToPlainText(draft)}</p>
               <div className="fallback-note">Paste this into the Jira ticket as a comment.</div>
               {generatedBy === 'rule-based' && (
                 <div className="fallback-note">{describeAiFallback(fallbackReason || '')}</div>

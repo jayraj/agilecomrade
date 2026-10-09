@@ -112,19 +112,17 @@ export const formatRiskType = (type: string): string => {
   return RISK_TYPE_META[type]?.label ?? type
 }
 
-const ALLOWED_INLINE_TAGS = /^(a|b|i|u|em|strong|br|ul|ol|li|p|span|code|pre)$/i
-
-export const sanitizeInlineHtml = (html: string): string => {
-  if (!html) return ''
-  let clean = html.replace(/<(script|style)[\s\S]*?<\/(script|style)>/gi, '')
-  clean = clean.replace(/\son\w+="[^"]*"/gi, '')
-  clean = clean.replace(/\son\w+='[^']*'/gi, '')
-  clean = clean.replace(/(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '$1="#"')
-  clean = clean.replace(/<\/?([a-z][a-z0-9]*)\b[^>]*>/gi, (_match, tag: string) =>
-    ALLOWED_INLINE_TAGS.test(tag) ? _match : '',
-  )
-  return clean
-}
+// The backend returns follow-up drafts as escaped text with only issue keys
+// wrapped in <a> anchors (see mitigation_agent.py:_linkify_issue_keys). We render
+// them as plain text (React escapes by default), so this flattens anchors to
+// "KEY (url)" and strips any remaining tags. No HTML is ever injected.
+export const draftToPlainText = (draft: string): string =>
+  draft
+    .replace(
+      /<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+      (_m, url: string, label: string) => `${label} (${url})`,
+    )
+    .replace(/<[^>]*>/g, '')
 
 export const splitItems = (text?: string): string[] => {
   if (!text) return []

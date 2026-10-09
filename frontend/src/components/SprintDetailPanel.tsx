@@ -17,7 +17,7 @@ import {
   type RiskDecision,
   type RiskDecisionStatus,
 } from '../api/client'
-import { SEVERITY_RANK, severityFromScore, sprintDayLabel } from '../utils/format'
+import { SEVERITY_RANK, severityFromScore, sprintDayLabel, draftToPlainText } from '../utils/format'
 import SprintGauge from './SprintGauge'
 import SprintDetailHeader from './SprintDetailHeader'
 import MitigationPlanCard from './MitigationPlanCard'
@@ -30,11 +30,6 @@ export interface SprintDetailPanelProps {
   sprintKey: string
   onClose?: () => void
 }
-
-const draftToPlainText = (html: string): string =>
-  html
-    .replace(/<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, url: string, label: string) => `${label} (${url})`)
-    .replace(/<[^>]*>/g, '')
 
 export default function SprintDetailPanel({ kind, sprintKey, onClose }: SprintDetailPanelProps) {
   const { syncIntervalSeconds, refreshKey } = useSync()
